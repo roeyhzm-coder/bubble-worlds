@@ -6,6 +6,7 @@ import {
   type Category,
   type ColorRoles,
   type PageLabels,
+  type WorldKind,
 } from "../types";
 import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
 
@@ -45,6 +46,22 @@ function asListViews(value: unknown): Record<string, boolean> {
   return value as Record<string, boolean>;
 }
 
+function asWorldKind(value: unknown): WorldKind | null {
+  return value === "bubbles" || value === "list" ? value : null;
+}
+
+function normalizeCategory(row: Category): Category {
+  return { ...row, container_type: asWorldKind(row.container_type) };
+}
+
+function normalizeBubble(row: RemoteBubble): Bubble {
+  return {
+    ...row,
+    tracking_history: asHistory(row.tracking_history),
+    container_type: asWorldKind(row.container_type),
+  };
+}
+
 export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
   if (!supabase) return null;
   const [cats, bubs, settings] = await Promise.all([
@@ -60,11 +77,8 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     (settings.data ?? []).map((row: { key: string; value: unknown }) => [row.key, row.value]),
   );
   return {
-    categories: (cats.data ?? []) as Category[],
-    bubbles: ((bubs.data ?? []) as RemoteBubble[]).map((row) => ({
-      ...row,
-      tracking_history: asHistory(row.tracking_history),
-    })),
+    categories: ((cats.data ?? []) as Category[]).map(normalizeCategory),
+    bubbles: ((bubs.data ?? []) as RemoteBubble[]).map(normalizeBubble),
     colorRoles: asRoles(map.color_roles),
     pageLabels: asPageLabels(map.page_labels),
     listViews: asListViews(map.list_views),

@@ -31,6 +31,7 @@ import type {
   ColorRoles,
   DrillNode,
   PageLabels,
+  WorldKind,
 } from "../types";
 
 interface AppContextValue {
@@ -59,7 +60,10 @@ interface AppContextValue {
   }) => void;
   addListItem: (title: string) => string | null;
   setPageLabels: (labels: Partial<PageLabels>) => void;
-  toggleListView: (key: string) => void;
+  currentWorldKind: WorldKind | null;
+  lockWorldKind: (kind: WorldKind) => void;
+  requestCreate: () => void;
+  focusListAdd: number;
   drillKey: string;
   updateCategory: (id: string, patch: Partial<Category>) => void;
   updateBubble: (id: string, patch: Partial<Bubble>) => void;
@@ -93,6 +97,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     | { mode: "edit"; type: "category" | "bubble"; id: string }
     | null
   >(null);
+  const [focusListAdd, setFocusListAdd] = useState(0);
   const applyingRemote = useRef(false);
   const ignoreRemoteUntil = useRef(0);
   const snapshotRef = useRef(snapshot);
@@ -169,6 +174,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           position_y: slot.y,
           order_index: snapshotRef.current.categories.length,
           created_at: new Date().toISOString(),
+          container_type: null,
         };
         mutate((prev) => ({ ...prev, categories: [...prev.categories, cat] }));
         void upsertCategory(cat);
@@ -203,8 +209,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
         weekly_frequency: 7,
         tracking_history: [],
         streak_mode: "flexible",
+        container_type: null,
       };
-      mutate((prev) => ({ ...prev, bubbles: [...prev.bubbles, bubble] }));
+      mutate((prev) => {
+        const categories = parent
+          ? prev.categories
+          : prev.categories.map((category) =>
+              category.id === categoryId && !category.container_type
+                ? { ...category, container_type: "bubbles" as const }
+                : category,
+            );
+        const bubbles = parent
+          ? prev.bubbles.map((item) =>
+              item.id === parent && !item.container_type
+                ? { ...item, container_type: "bubbles" as const }
+                : item,
+            )
+          : prev.bubbles;
+        const lockedCat = !parent ? categories.find((c) => c.id === categoryId) : undefined;
+        const lockedParent = parent ? bubbles.find((b) => b.id === parent) : undefined;
+        if (lockedCat && lockedCat.container_type === "bubbles") void upsertCategory(lockedCat);
+        if (lockedParent && lockedParent.container_type === "bubbles") {
+          void upsertBubble(lockedParent);
+        }
+        return { ...prev, categories, bubbles: [...bubbles, bubble] };
+      });
       void upsertBubble(bubble);
       setComposer(null);
     },
@@ -238,23 +267,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         weekly_frequency: 7,
         tracking_history: [],
         streak_mode: "flexible",
+        container_type: null,
       };
-      mutate((prev) => ({ ...prev, bubbles: [...prev.bubbles, bubble] }));
+      mutate((prev) => {
+        const categories = parent
+          ? prev.categories
+          : prev.categories.map((category) =>
+              category.id === categoryId && !category.container_type
+                ? { ...category, container_type: "list" as const }
+                : category,
+            );
+        const bubbles = parent
+          ? prev.bubbles.map((item) =>
+              item.id === parent && !item.container_type
+                ? { ...item, container_type: "list" as const }
+                : item,
+            )
+          : prev.bubbles;
+        const lockedCat = !parent ? categories.find((c) => c.id === categoryId) : undefined;
+        const lockedParent = parent ? bubbles.find((b) => b.id === parent) : undefined;
+        if (lockedCat && lockedCat.container_type === "list") void upsertCategory(lockedCat);
+        if (lockedParent && lockedParent.container_type === "list") {
+          void upsertBubble(lockedParent);
+        }
+        return { ...prev, categories, bubbles: [...bubbles, bubble] };
+      });
       void upsertBubble(bubble);
       return bubble.id;
     },
     [mutate, resolveParent],
-  );
-
-  const toggleListView = useCallback(
-    (key: string) => {
-      mutate((prev) => {
-        const listViews = { ...prev.listViews, [key]: !prev.listViews[key] };
-        void upsertSetting("list_views", listViews);
-        return { ...prev, listViews };
-      });
-    },
-    [mutate],
   );
 
   const setPageLabels = useCallback(
@@ -449,6 +490,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? `category:${drill.id}`
         : `bubble:${drill.id}`;
 
+  const currentWorldKind = useMemo<WorldKind | null>(() => {
+    if (drill.kind === "root") return "bubbles";
+    if (drill.kind === "category") {
+      return snapshot.categories.find((c) => c.id === drill.id)?.container_type ?? null;
+    }
+    return snapshot.bubbles.find((b) => b.id === drill.id)?.container_type ?? null;
+  }, [drill, snapshot.bubbles, snapshot.categories]);
+
+  const lockWorldKind = useCallback(
+    (kind: WorldKind) => {
+      if (drill.kind === "root") return;
+      if (drill.kind === "category") updateCategory(drill.id, { container_type: kind });
+      else updateBubble(drill.id, { container_type: kind });
+    },
+    [drill, updateBubble, updateCategory],
+  );
+
+  const requestCreate = useCallback(() => {
+    if (drill.kind === "root") {
+      setComposer({ mode: "create", type: "category" });
+      return;
+    }
+    if (currentWorldKind === "list") {
+      setFocusListAdd((n) => n + 1);
+      return;
+    }
+    if (currentWorldKind === "bubbles") {
+      setComposer({ mode: "create", type: "bubble" });
+    }
+  }, [currentWorldKind, drill.kind]);
+
   const visibleCategories = drill.kind === "root" ? snapshot.categories : [];
   const visibleBubbles = useMemo(() => {
     if (drill.kind === "root") return [];
@@ -480,7 +552,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       commitCreate,
       addListItem,
       setPageLabels,
-      toggleListView,
+      currentWorldKind,
+      lockWorldKind,
+      requestCreate,
+      focusListAdd,
       drillKey,
       updateCategory,
       updateBubble,
@@ -501,18 +576,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       composer,
       commitCreate,
       currentTitle,
+      currentWorldKind,
       deleteBubble,
       deleteCategory,
       drill,
       drillKey,
+      focusListAdd,
+      lockWorldKind,
       markToday,
       minusDay,
       moveNode,
       page,
+      requestCreate,
       resetTracking,
       setPageLabels,
       snapshot,
-      toggleListView,
       unmarkToday,
       updateBubble,
       updateCategory,

@@ -7,7 +7,7 @@ import { WorldMap } from "./components/WorldMap";
 import { useApp } from "./state/AppProvider";
 
 export default function App() {
-  const { page, setPage, cloud, drill, openCreate } = useApp();
+  const { page, setPage, cloud, requestCreate } = useApp();
   const [dragging, setDragging] = useState(false);
 
   return (
@@ -32,9 +32,7 @@ export default function App() {
 
       <button
         type="button"
-        onClick={() =>
-          openCreate(drill.kind === "root" ? "category" : "bubble")
-        }
+        onClick={requestCreate}
         className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-slate-900 text-white shadow-bubble"
         aria-label="הוספה"
       >

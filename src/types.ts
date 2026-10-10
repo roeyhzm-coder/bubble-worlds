@@ -14,6 +14,8 @@ export type BubbleStatus =
 
 export type StreakMode = "strict" | "flexible" | "cumulative";
 
+export type WorldKind = "bubbles" | "list";
+
 export interface Category {
   id: string;
   name: string;
@@ -22,6 +24,7 @@ export interface Category {
   position_y: number;
   order_index: number;
   created_at: string;
+  container_type: WorldKind | null;
 }
 
 export interface Bubble {
@@ -41,6 +44,7 @@ export interface Bubble {
   weekly_frequency: number;
   tracking_history: string[];
   streak_mode: StreakMode;
+  container_type: WorldKind | null;
 }
 
 export type ColorRoles = Record<BubbleStatus, string>;

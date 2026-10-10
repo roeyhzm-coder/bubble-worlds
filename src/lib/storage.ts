@@ -31,7 +31,10 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
       remoteZero && prev && (prev.position_x !== 0 || prev.position_y !== 0)
         ? { ...cat, position_x: prev.position_x, position_y: prev.position_y }
         : cat;
-    cats.set(cat.id, keep);
+    cats.set(cat.id, {
+      ...keep,
+      container_type: keep.container_type ?? prev?.container_type ?? null,
+    });
   }
   const bubs = new Map(local.bubbles.map((b) => [b.id, b]));
   for (const bub of remote.bubbles) {
@@ -41,7 +44,10 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
       remoteZero && prev && (prev.position_x !== 0 || prev.position_y !== 0)
         ? { ...bub, position_x: prev.position_x, position_y: prev.position_y }
         : bub;
-    bubs.set(bub.id, keep);
+    bubs.set(bub.id, {
+      ...keep,
+      container_type: keep.container_type ?? prev?.container_type ?? null,
+    });
   }
   return mergeSeed({
     categories: [...cats.values()],

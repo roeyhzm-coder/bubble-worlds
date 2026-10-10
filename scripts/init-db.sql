@@ -10,7 +10,9 @@ create table if not exists public.bw_categories (
   position_x double precision not null default 50,
   position_y double precision not null default 50,
   order_index integer not null default 0,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  container_type text
+    check (container_type is null or container_type in ('bubbles', 'list'))
 );
 
 create table if not exists public.bw_bubbles (
@@ -31,8 +33,15 @@ create table if not exists public.bw_bubbles (
   weekly_frequency integer not null default 7,
   tracking_history jsonb not null default '[]'::jsonb,
   streak_mode text not null default 'flexible'
-    check (streak_mode in ('strict', 'flexible', 'cumulative'))
+    check (streak_mode in ('strict', 'flexible', 'cumulative')),
+  container_type text
+    check (container_type is null or container_type in ('bubbles', 'list'))
 );
+
+alter table public.bw_categories add column if not exists container_type text
+  check (container_type is null or container_type in ('bubbles', 'list'));
+alter table public.bw_bubbles add column if not exists container_type text
+  check (container_type is null or container_type in ('bubbles', 'list'));
 
 create table if not exists public.bw_app_settings (
   key text primary key,

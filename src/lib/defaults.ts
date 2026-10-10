@@ -1,4 +1,4 @@
-import type { AppSnapshot, Bubble, Category, ColorRoles, PageLabels } from "../types";
+import type { AppSnapshot, Bubble, Category, ColorRoles, PageLabels, WorldKind } from "../types";
 
 export const STORAGE_KEY = "bubble-worlds-v1";
 
@@ -31,6 +31,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     position_y: 20,
     order_index: 0,
     created_at: "2026-01-01T00:00:00.000Z",
+    container_type: "bubbles",
   },
   {
     id: "cat-desires",
@@ -40,6 +41,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     position_y: 40,
     order_index: 1,
     created_at: "2026-01-01T00:00:01.000Z",
+    container_type: "bubbles",
   },
   {
     id: "cat-work",
@@ -49,6 +51,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     position_y: 74,
     order_index: 2,
     created_at: "2026-01-01T00:00:02.000Z",
+    container_type: "bubbles",
   },
   {
     id: "cat-fitness",
@@ -58,6 +61,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     position_y: 74,
     order_index: 3,
     created_at: "2026-01-01T00:00:03.000Z",
+    container_type: "bubbles",
   },
   {
     id: "cat-life",
@@ -67,6 +71,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
     position_y: 40,
     order_index: 4,
     created_at: "2026-01-01T00:00:04.000Z",
+    container_type: "bubbles",
   },
 ];
 
@@ -88,6 +93,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     weekly_frequency: 7,
     tracking_history: [],
     streak_mode: "flexible",
+    container_type: null,
   },
   {
     id: "bub-read",
@@ -106,6 +112,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     weekly_frequency: 5,
     tracking_history: [],
     streak_mode: "flexible",
+    container_type: null,
   },
   {
     id: "bub-japan",
@@ -124,6 +131,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     weekly_frequency: 3,
     tracking_history: [],
     streak_mode: "cumulative",
+    container_type: null,
   },
   {
     id: "bub-portfolio",
@@ -142,6 +150,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     weekly_frequency: 5,
     tracking_history: [],
     streak_mode: "flexible",
+    container_type: null,
   },
   {
     id: "bub-walk",
@@ -160,6 +169,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     weekly_frequency: 5,
     tracking_history: [],
     streak_mode: "flexible",
+    container_type: null,
   },
   {
     id: "bub-sleep",
@@ -178,6 +188,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     weekly_frequency: 7,
     tracking_history: [],
     streak_mode: "strict",
+    container_type: null,
   },
 ];
 
@@ -204,18 +215,40 @@ function restoreSeedPosition<T extends { id: string; position_x: number; positio
   return { ...item, position_x: seed.position_x, position_y: seed.position_y };
 }
 
+function asWorldKind(value: unknown): WorldKind | null {
+  return value === "bubbles" || value === "list" ? value : null;
+}
+
 export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
   const catIds = new Set(snapshot.categories.map((c) => c.id));
   const bubIds = new Set(snapshot.bubbles.map((b) => b.id));
+  const categories = [
+    ...snapshot.categories.map((c) => restoreSeedPosition(c, DEFAULT_CATEGORIES)),
+    ...DEFAULT_CATEGORIES.filter((c) => !catIds.has(c.id)),
+  ];
+  const bubbles = unstickClusteredBubbles([
+    ...snapshot.bubbles.map((b) => restoreSeedPosition(b, DEFAULT_BUBBLES)),
+    ...DEFAULT_BUBBLES.filter((b) => !bubIds.has(b.id)),
+  ]);
   return {
-    categories: [
-      ...snapshot.categories.map((c) => restoreSeedPosition(c, DEFAULT_CATEGORIES)),
-      ...DEFAULT_CATEGORIES.filter((c) => !catIds.has(c.id)),
-    ],
-    bubbles: unstickClusteredBubbles([
-      ...snapshot.bubbles.map((b) => restoreSeedPosition(b, DEFAULT_BUBBLES)),
-      ...DEFAULT_BUBBLES.filter((b) => !bubIds.has(b.id)),
-    ]),
+    categories: categories.map((category) => {
+      const hasChildren = bubbles.some(
+        (bubble) => bubble.category_id === category.id && bubble.parent_bubble_id === null,
+      );
+      return {
+        ...category,
+        container_type:
+          asWorldKind(category.container_type) ?? (hasChildren ? "bubbles" : null),
+      };
+    }),
+    bubbles: bubbles.map((bubble) => {
+      const hasChildren = bubbles.some((child) => child.parent_bubble_id === bubble.id);
+      return {
+        ...bubble,
+        container_type:
+          asWorldKind(bubble.container_type) ?? (hasChildren ? "bubbles" : null),
+      };
+    }),
     colorRoles: { ...DEFAULT_COLOR_ROLES, ...snapshot.colorRoles },
     pageLabels: { ...DEFAULT_PAGE_LABELS, ...snapshot.pageLabels },
     listViews: { ...snapshot.listViews },

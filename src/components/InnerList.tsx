@@ -1,5 +1,5 @@
 import { Check, ChevronLeft, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PALETTE } from "../lib/defaults";
 import {
   computeStreak,
@@ -23,10 +23,17 @@ export function InnerList({ items }: { items: Bubble[] }) {
     unmarkToday,
     minusDay,
     resetTracking,
+    focusListAdd,
   } = useApp();
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const addRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!focusListAdd) return;
+    addRef.current?.focus();
+  }, [focusListAdd]);
 
   const submit = () => {
     const title = draft.trim();
@@ -46,6 +53,7 @@ export function InnerList({ items }: { items: Bubble[] }) {
       >
         <Plus size={16} className="text-slate-400" />
         <input
+          ref={addRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="פריט חדש לרשימה…"

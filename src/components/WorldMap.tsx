@@ -1,8 +1,9 @@
-import { ArrowRight, LayoutGrid, List } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useRef } from "react";
 import { useApp } from "../state/AppProvider";
 import { BubbleNode } from "./BubbleNode";
 import { InnerList } from "./InnerList";
+import { WorldKindPicker } from "./WorldKindPicker";
 
 interface WorldMapProps {
   onDragChange: (dragging: boolean) => void;
@@ -17,11 +18,9 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
     currentTitle,
     visibleCategories,
     visibleBubbles,
-    snapshot,
+    currentWorldKind,
     openEditor,
     moveNode,
-    drillKey,
-    toggleListView,
   } = useApp();
 
   const parentCrumb = breadcrumbs[breadcrumbs.length - 2];
@@ -31,9 +30,9 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
       : parentCrumb
         ? `חזרה ל${parentCrumb.label}`
         : "חזרה";
-  const listMode = drill.kind !== "root" && Boolean(snapshot.listViews[drillKey]);
-  const canvasItems =
-    drill.kind === "root" ? visibleCategories : visibleBubbles;
+  const needsKind = drill.kind !== "root" && currentWorldKind === null;
+  const listMode = drill.kind !== "root" && currentWorldKind === "list";
+  const canvasItems = drill.kind === "root" ? visibleCategories : visibleBubbles;
 
   return (
     <section className="flex h-full flex-col">
@@ -74,37 +73,11 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
             </div>
           )}
         </div>
-        {drill.kind !== "root" && (
-          <div className="mt-0.5 flex h-12 shrink-0 rounded-2xl bg-white p-1 shadow-soft">
-            <button
-              type="button"
-              onClick={() => {
-                if (listMode) toggleListView(drillKey);
-              }}
-              className={`inline-flex h-10 items-center gap-1 rounded-xl px-2.5 text-[11px] font-extrabold ${
-                !listMode ? "bg-slate-900 text-white" : "text-slate-500"
-              }`}
-            >
-              <LayoutGrid size={14} />
-              בועות
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!listMode) toggleListView(drillKey);
-              }}
-              className={`inline-flex h-10 items-center gap-1 rounded-xl px-2.5 text-[11px] font-extrabold ${
-                listMode ? "bg-slate-900 text-white" : "text-slate-500"
-              }`}
-            >
-              <List size={14} />
-              רשימה
-            </button>
-          </div>
-        )}
       </div>
 
-      {listMode ? (
+      {needsKind ? (
+        <WorldKindPicker />
+      ) : listMode ? (
         <InnerList items={visibleBubbles} />
       ) : (
         <div
@@ -114,7 +87,7 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
         >
           {canvasItems.length === 0 && (
             <div className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-slate-400">
-              אין כאן בועות עדיין. לחצו על + כדי ליצור בועה.
+              אין כאן בועות עדיין. לחצו על + כדי ליצור בועה עגולה.
             </div>
           )}
 
