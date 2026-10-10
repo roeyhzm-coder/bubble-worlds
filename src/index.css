@@ -22,7 +22,7 @@ body {
   color: #0f172a;
   font-family: Heebo, Assistant, "Segoe UI", Tahoma, Arial, sans-serif;
   overflow: hidden;
-  overscroll-behavior: none;
+  overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -43,4 +43,11 @@ textarea {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.pager-scroller {
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }

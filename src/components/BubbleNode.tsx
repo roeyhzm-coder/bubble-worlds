@@ -54,7 +54,6 @@ export function BubbleNode({
     <motion.div
       ref={nodeRef}
       data-bubble-node={item.id}
-      data-no-pager-swipe
       drag
       dragMomentum={false}
       dragElastic={0}
@@ -117,7 +116,7 @@ export function BubbleNode({
         x: offsetX,
         y: offsetY,
       }}
-      className="absolute touch-none select-none"
+      className="absolute select-none"
       whileTap={{ scale: 0.96 }}
       transition={{ type: "spring", stiffness: 420, damping: 28 }}
     >
