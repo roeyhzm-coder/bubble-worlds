@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { EMPTY_ITEM_TOOLS, PALETTE, layoutRing, newId, todayKey } from "../lib/defaults";
-import { DEFAULT_TRIANGLE_TYPES, trianglePatch } from "../lib/triangles";
+import { DEFAULT_TRIANGLE_TYPES, clearTrianglePatch, trianglePatch } from "../lib/triangles";
 import { loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
   deleteBubbleRemote,
@@ -82,7 +82,7 @@ interface AppContextValue {
   unmarkToday: (id: string) => void;
   minusDay: (id: string) => void;
   resetTracking: (id: string) => void;
-  setTriangleType: (id: string, triangleId: string) => void;
+  setTriangleType: (id: string, triangleId: string | null) => void;
   addTriangleType: () => string;
   updateTriangleType: (id: string, patch: Partial<TriangleType>) => void;
   deleteTriangleType: (id: string) => void;
@@ -277,8 +277,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         streak_mode: "flexible",
         container_type: null,
         ...EMPTY_ITEM_TOOLS,
-        triangle_id: snapshotRef.current.triangleTypes[0]?.id ?? EMPTY_ITEM_TOOLS.triangle_id,
-        color: snapshotRef.current.triangleTypes[0]?.color ?? snapshotRef.current.colorRoles.default,
+        triangle_id: null,
+        color: snapshotRef.current.colorRoles.default,
       };
       mutate((prev) => {
         const categories = parent
@@ -460,7 +460,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setTriangleType = useCallback(
-    (id: string, triangleId: string) => {
+    (id: string, triangleId: string | null) => {
+      if (!triangleId) {
+        updateBubble(id, clearTrianglePatch(snapshotRef.current.colorRoles.default));
+        return;
+      }
       const type = snapshotRef.current.triangleTypes.find((item) => item.id === triangleId);
       if (!type) return;
       updateBubble(id, trianglePatch(type));

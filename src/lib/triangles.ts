@@ -88,12 +88,23 @@ export function findTriangle(
   return types.find((item) => item.id === id);
 }
 
-export function inferTriangleId(bubble: Pick<Bubble, "triangle_id" | "is_tracking" | "status">): string {
+export function inferTriangleId(
+  bubble: Pick<Bubble, "triangle_id" | "is_tracking" | "status">,
+): string | null {
   if (bubble.triangle_id) return bubble.triangle_id;
   if (bubble.is_tracking || bubble.status === "active_tracking") return TRI_TRACK;
   if (bubble.status === "focus") return TRI_ACTION;
   if (bubble.status === "deep_thought") return TRI_THOUGHT;
-  return TRI_TRACK;
+  return null;
+}
+
+export function clearTrianglePatch(defaultColor: string): Partial<Bubble> {
+  return {
+    triangle_id: null,
+    color: defaultColor,
+    is_tracking: false,
+    status: "default",
+  };
 }
 
 export function trianglePatch(type: TriangleType): Partial<Bubble> {

@@ -1,8 +1,8 @@
 import type { ActionStep, AppSnapshot, Bubble, Category, ColorRoles, PageLabels, WorldKind } from "../types";
-import { TRI_TRACK, inferTriangleId, mergeTriangleTypes } from "./triangles";
+import { inferTriangleId, mergeTriangleTypes } from "./triangles";
 
 export const EMPTY_ITEM_TOOLS = {
-  triangle_id: TRI_TRACK as string | null,
+  triangle_id: null as string | null,
   due_at: null as string | null,
   due_label: "",
   action_done: false,

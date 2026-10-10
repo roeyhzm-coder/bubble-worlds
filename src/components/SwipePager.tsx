@@ -93,9 +93,7 @@ export function SwipePager({
       ref={scrollerRef}
       dir="ltr"
       onScroll={onScroll}
-      className={`pager-scroller flex h-full min-h-0 min-w-0 flex-1 no-scrollbar ${
-        locked ? "overflow-hidden" : "overflow-x-auto overflow-y-hidden"
-      }`}
+      className="pager-scroller flex h-full min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden no-scrollbar"
       style={{ direction: "ltr" }}
     >
       {children.map((child, index) => (

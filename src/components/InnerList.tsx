@@ -82,13 +82,22 @@ export function InnerList({ items }: { items: Bubble[] }) {
           const kids = childrenOf(item.id).length;
           const open = openId === item.id;
           const type = findTriangle(snapshot.triangleTypes, item.triangle_id);
+          const plain = !type;
           return (
             <div key={item.id} className="rounded-2xl bg-white shadow-soft">
               <div className="flex min-h-12 items-center gap-1 px-2">
-                <TriangleGlyph
-                  color={type?.color ?? item.color}
-                  onClick={() => toggle(item.id)}
-                />
+                {plain ? (
+                  <button
+                    type="button"
+                    onClick={() => toggle(item.id)}
+                    className="grid h-10 w-8 shrink-0 place-items-center text-sm font-bold text-slate-300"
+                    aria-label="ללא משולש"
+                  >
+                    ∅
+                  </button>
+                ) : (
+                  <TriangleGlyph color={type.color} onClick={() => toggle(item.id)} />
+                )}
                 <button
                   type="button"
                   onClick={() => toggle(item.id)}
@@ -134,8 +143,17 @@ export function InnerList({ items }: { items: Bubble[] }) {
                       value={item.triangle_id}
                       onChange={(id) => setTriangleType(item.id, id)}
                     />
+                    {plain && (
+                      <textarea
+                        value={item.notes}
+                        onChange={(e) => updateBubble(item.id, { notes: e.target.value })}
+                        rows={3}
+                        placeholder="הערה חופשית…"
+                        className="mt-2 w-full resize-none rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none"
+                      />
+                    )}
                   </div>
-                  <TypeTools item={item} />
+                  {!plain && <TypeTools item={item} />}
                 </div>
               )}
             </div>

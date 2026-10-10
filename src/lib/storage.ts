@@ -48,7 +48,10 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
     bubs.set(bub.id, {
       ...keep,
       container_type: keep.container_type ?? prev?.container_type ?? null,
-      triangle_id: keep.triangle_id ?? prev?.triangle_id ?? null,
+      triangle_id:
+        keep.triangle_id !== undefined
+          ? keep.triangle_id
+          : prev?.triangle_id ?? null,
       due_at: keep.due_at ?? prev?.due_at ?? null,
       due_label: keep.due_label || prev?.due_label || "",
       action_done: keep.action_done || Boolean(prev?.action_done),

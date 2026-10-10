@@ -76,7 +76,7 @@ export function FocusHub() {
 
         {groups.length === 0 && (
           <div className="grid h-40 place-items-center text-sm text-slate-400">
-            אין עדיין פריטים עם משולש. צרו פריט ברשימה או שייכו סוג בעמוד הניהול.
+            אין עדיין פריטים עם משולש. פריטים כלליים נשארים ברשימת המקור עד שמשייכים להם סוג.
           </div>
         )}
       </div>

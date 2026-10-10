@@ -39,11 +39,20 @@ export function TrianglePicker({
   onChange,
 }: {
   value: string | null;
-  onChange: (id: string) => void;
+  onChange: (id: string | null) => void;
 }) {
   const { snapshot } = useApp();
   return (
     <div className="flex flex-wrap gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={`inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-extrabold ${
+          !value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+        }`}
+      >
+        ∅ ללא
+      </button>
       {snapshot.triangleTypes.map((type) => (
         <button
           key={type.id}
@@ -71,10 +80,10 @@ export function TypeTools({
   const { snapshot } = useApp();
   const live = snapshot.bubbles.find((row) => row.id === item.id) ?? item;
   const type = findTriangle(snapshot.triangleTypes, live.triangle_id);
-  const template: ToolTemplate = type?.template ?? "tracking";
-  if (template === "action") return <ActionTools item={live} />;
-  if (template === "thought") return <ThoughtTools item={live} spacious={spacious} />;
-  return <TrackingTools item={live} color={type?.color ?? live.color} />;
+  if (!type) return null;
+  if (type.template === "action") return <ActionTools item={live} />;
+  if (type.template === "thought") return <ThoughtTools item={live} spacious={spacious} />;
+  return <TrackingTools item={live} color={type.color} />;
 }
 
 function TrackingTools({ item, color }: { item: Bubble; color: string }) {
