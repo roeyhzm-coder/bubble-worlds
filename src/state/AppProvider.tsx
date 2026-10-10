@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { DEFAULT_COLOR_ROLES, newId, todayKey } from "../lib/defaults";
+import { newId, todayKey } from "../lib/defaults";
 import { loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
   deleteBubbleRemote,
@@ -21,7 +21,7 @@ import {
   upsertColorRoles,
   upsertSetting,
 } from "../lib/supabase";
-import { markDone, removeLastDay } from "../lib/tracking";
+import { markDone, removeDate, removeLastDay } from "../lib/tracking";
 import type {
   AppSnapshot,
   Breadcrumb,
@@ -45,13 +45,20 @@ interface AppContextValue {
   visibleCategories: Category[];
   visibleBubbles: Bubble[];
   childrenOf: (bubbleId: string) => Bubble[];
-  editing: { type: "category" | "bubble"; id: string } | null;
+  composer:
+    | { mode: "create"; type: "category" | "bubble" }
+    | { mode: "edit"; type: "category" | "bubble"; id: string }
+    | null;
+  openCreate: (type: "category" | "bubble") => void;
   openEditor: (target: { type: "category" | "bubble"; id: string }) => void;
-  closeEditor: () => void;
-  addCategory: () => void;
-  addBubble: (opts?: { title?: string; openEditor?: boolean }) => string | null;
+  closeComposer: () => void;
+  commitCreate: (input: {
+    name: string;
+    color: string;
+    size_multiplier: number;
+  }) => void;
+  addListItem: (title: string) => string | null;
   setPageLabels: (labels: Partial<PageLabels>) => void;
-  toggleListView: (key: string) => void;
   drillKey: string;
   updateCategory: (id: string, patch: Partial<Category>) => void;
   updateBubble: (id: string, patch: Partial<Bubble>) => void;
@@ -65,6 +72,7 @@ interface AppContextValue {
   ) => void;
   applyStatusColor: (status: BubbleStatus, color: string) => void;
   markToday: (id: string) => void;
+  unmarkToday: (id: string) => void;
   minusDay: (id: string) => void;
   resetTracking: (id: string) => void;
 }
@@ -79,10 +87,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadLocal());
   const [page, setPage] = useState(0);
   const [drill, setDrill] = useState<DrillNode>({ kind: "root" });
-  const [editing, setEditing] = useState<{
-    type: "category" | "bubble";
-    id: string;
-  } | null>(null);
+  const [composer, setComposer] = useState<
+    | { mode: "create"; type: "category" | "bubble" }
+    | { mode: "edit"; type: "category" | "bubble"; id: string }
+    | null
+  >(null);
   const applyingRemote = useRef(false);
   const ignoreRemoteUntil = useRef(0);
   const snapshotRef = useRef(snapshot);
@@ -130,47 +139,81 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSnapshot((prev) => updater(prev));
   }, []);
 
-  const addCategory = useCallback(() => {
-    const cat: Category = {
-      id: newId("cat"),
-      name: "עולם חדש",
-      color: DEFAULT_COLOR_ROLES.default,
-      position_x: 50,
-      position_y: 50,
-      order_index: snapshotRef.current.categories.length,
-      created_at: new Date().toISOString(),
-    };
-    mutate((prev) => ({ ...prev, categories: [...prev.categories, cat] }));
-    void upsertCategory(cat);
-    setEditing({ type: "category", id: cat.id });
-  }, [mutate]);
+  const resolveParent = useCallback(() => {
+    const current = snapshotRef.current;
+    let categoryId = current.categories[0]?.id;
+    let parent: string | null = null;
+    if (drill.kind === "category") categoryId = drill.id;
+    if (drill.kind === "bubble") {
+      const parentBubble = current.bubbles.find((b) => b.id === drill.id);
+      categoryId = parentBubble?.category_id ?? categoryId;
+      parent = drill.id;
+    }
+    return { categoryId, parent };
+  }, [drill]);
 
-  const addBubble = useCallback(
-    (opts?: { title?: string; openEditor?: boolean }) => {
-      const current = snapshotRef.current;
-      let categoryId = current.categories[0]?.id;
-      let parent: string | null = null;
-      if (drill.kind === "category") categoryId = drill.id;
-      if (drill.kind === "bubble") {
-        const parentBubble = current.bubbles.find((b) => b.id === drill.id);
-        categoryId = parentBubble?.category_id ?? categoryId;
-        parent = drill.id;
+  const commitCreate = useCallback(
+    (input: { name: string; color: string; size_multiplier: number }) => {
+      const name = input.name.trim() || "בועה חדשה";
+      if (composer?.mode === "create" && composer.type === "category") {
+        const cat: Category = {
+          id: newId("cat"),
+          name,
+          color: input.color,
+          position_x: 50,
+          position_y: 50,
+          order_index: snapshotRef.current.categories.length,
+          created_at: new Date().toISOString(),
+        };
+        mutate((prev) => ({ ...prev, categories: [...prev.categories, cat] }));
+        void upsertCategory(cat);
+        setComposer(null);
+        return;
       }
+      const { categoryId, parent } = resolveParent();
       if (!categoryId) {
-        addCategory();
-        return null;
+        setComposer({ mode: "create", type: "category" });
+        return;
       }
-      const roles = current.colorRoles;
       const bubble: Bubble = {
         id: newId("bub"),
         parent_bubble_id: parent,
         category_id: categoryId,
-        title: opts?.title?.trim() || "בועה חדשה",
+        title: name,
         notes: "",
-        color: roles.default,
+        color: input.color,
         status: "default",
-        position_x: 42 + Math.random() * 16,
-        position_y: 38 + Math.random() * 16,
+        position_x: 50,
+        position_y: 50,
+        size_multiplier: input.size_multiplier,
+        created_at: new Date().toISOString(),
+        is_tracking: false,
+        target_days: 30,
+        weekly_frequency: 7,
+        tracking_history: [],
+        streak_mode: "flexible",
+      };
+      mutate((prev) => ({ ...prev, bubbles: [...prev.bubbles, bubble] }));
+      void upsertBubble(bubble);
+      setComposer(null);
+    },
+    [composer, mutate, resolveParent],
+  );
+
+  const addListItem = useCallback(
+    (title: string) => {
+      const { categoryId, parent } = resolveParent();
+      if (!categoryId) return null;
+      const bubble: Bubble = {
+        id: newId("bub"),
+        parent_bubble_id: parent,
+        category_id: categoryId,
+        title: title.trim() || "פריט חדש",
+        notes: "",
+        color: snapshotRef.current.colorRoles.default,
+        status: "default",
+        position_x: 50,
+        position_y: 50,
         size_multiplier: 1,
         created_at: new Date().toISOString(),
         is_tracking: false,
@@ -181,12 +224,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
       mutate((prev) => ({ ...prev, bubbles: [...prev.bubbles, bubble] }));
       void upsertBubble(bubble);
-      if (opts?.openEditor !== false && !opts?.title) {
-        setEditing({ type: "bubble", id: bubble.id });
-      }
       return bubble.id;
     },
-    [addCategory, drill, mutate],
+    [mutate, resolveParent],
   );
 
   const setPageLabels = useCallback(
@@ -195,17 +235,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const pageLabels = { ...prev.pageLabels, ...labels };
         void upsertSetting("page_labels", pageLabels);
         return { ...prev, pageLabels };
-      });
-    },
-    [mutate],
-  );
-
-  const toggleListView = useCallback(
-    (key: string) => {
-      mutate((prev) => {
-        const listViews = { ...prev.listViews, [key]: !prev.listViews[key] };
-        void upsertSetting("list_views", listViews);
-        return { ...prev, listViews };
       });
     },
     [mutate],
@@ -250,7 +279,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }));
       void deleteCategoryRemote(id);
       if (drill.kind === "category" && drill.id === id) setDrill({ kind: "root" });
-      setEditing(null);
+      setComposer(null);
     },
     [drill, mutate],
   );
@@ -271,13 +300,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       void deleteBubbleRemote(id);
       if (drill.kind === "bubble" && drill.id === id) setDrill({ kind: "root" });
-      setEditing(null);
+      setComposer(null);
     },
     [descendantIds, drill, mutate],
   );
 
   const moveNode = useCallback(
     (type: "category" | "bubble", id: string, x: number, y: number) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       const pos = { position_x: clampPos(x), position_y: clampPos(y) };
       if (type === "category") updateCategory(id, pos);
       else updateBubble(id, pos);
@@ -311,6 +341,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         is_tracking: true,
         status: "active_tracking",
         color: snapshotRef.current.colorRoles.active_tracking,
+      });
+    },
+    [updateBubble],
+  );
+
+  const unmarkToday = useCallback(
+    (id: string) => {
+      const bubble = snapshotRef.current.bubbles.find((b) => b.id === id);
+      if (!bubble) return;
+      updateBubble(id, {
+        tracking_history: removeDate(bubble.tracking_history, todayKey()),
       });
     },
     [updateBubble],
@@ -404,13 +445,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       visibleCategories,
       visibleBubbles,
       childrenOf,
-      editing,
-      openEditor: setEditing,
-      closeEditor: () => setEditing(null),
-      addCategory,
-      addBubble,
+      composer,
+      openCreate: (type) => setComposer({ mode: "create", type }),
+      openEditor: (target) => setComposer({ mode: "edit", ...target }),
+      closeComposer: () => setComposer(null),
+      commitCreate,
+      addListItem,
       setPageLabels,
-      toggleListView,
       drillKey,
       updateCategory,
       updateBubble,
@@ -419,21 +460,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       moveNode,
       applyStatusColor,
       markToday,
+      unmarkToday,
       minusDay,
       resetTracking,
     }),
     [
-      addBubble,
-      addCategory,
+      addListItem,
       applyStatusColor,
-      drillKey,
       breadcrumbs,
       childrenOf,
+      composer,
+      commitCreate,
       currentTitle,
       deleteBubble,
       deleteCategory,
       drill,
-      editing,
+      drillKey,
       markToday,
       minusDay,
       moveNode,
@@ -441,7 +483,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       resetTracking,
       setPageLabels,
       snapshot,
-      toggleListView,
+      unmarkToday,
       updateBubble,
       updateCategory,
       visibleBubbles,

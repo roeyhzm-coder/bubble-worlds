@@ -194,16 +194,26 @@ export const EMPTY_SNAPSHOT: AppSnapshot = {
   listViews: {},
 };
 
+function restoreSeedPosition<T extends { id: string; position_x: number; position_y: number }>(
+  item: T,
+  seeds: T[],
+): T {
+  if (item.position_x !== 0 || item.position_y !== 0) return item;
+  const seed = seeds.find((s) => s.id === item.id);
+  if (!seed) return item;
+  return { ...item, position_x: seed.position_x, position_y: seed.position_y };
+}
+
 export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
   const catIds = new Set(snapshot.categories.map((c) => c.id));
   const bubIds = new Set(snapshot.bubbles.map((b) => b.id));
   return {
     categories: [
-      ...snapshot.categories,
+      ...snapshot.categories.map((c) => restoreSeedPosition(c, DEFAULT_CATEGORIES)),
       ...DEFAULT_CATEGORIES.filter((c) => !catIds.has(c.id)),
     ],
     bubbles: [
-      ...snapshot.bubbles,
+      ...snapshot.bubbles.map((b) => restoreSeedPosition(b, DEFAULT_BUBBLES)),
       ...DEFAULT_BUBBLES.filter((b) => !bubIds.has(b.id)),
     ],
     colorRoles: { ...DEFAULT_COLOR_ROLES, ...snapshot.colorRoles },

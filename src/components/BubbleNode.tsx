@@ -1,16 +1,13 @@
 import { motion, useMotionValue } from "framer-motion";
 import { Pencil } from "lucide-react";
-import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
-import { trackingProgress } from "../lib/tracking";
+import { useRef, type RefObject } from "react";
 import type { Bubble, Category } from "../types";
-import { ProgressRing } from "./ProgressRing";
 
 interface BubbleNodeProps {
   item: Category | Bubble;
   type: "category" | "bubble";
-  childCount: number;
-  canvasRef: RefObject<HTMLDivElement | null>;
   boundsRef: RefObject<HTMLDivElement | null>;
+  canvasRef: RefObject<HTMLDivElement | null>;
   onOpen: () => void;
   onEdit: () => void;
   onMove: (x: number, y: number) => void;
@@ -21,9 +18,9 @@ function isBubble(_item: Category | Bubble, type: "category" | "bubble"): _item 
   return type === "bubble";
 }
 
+const BASE = 104;
 const MARGIN = 16;
 const DRAG_THRESHOLD = 12;
-const LONG_PRESS_MS = 480;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -32,53 +29,22 @@ function clamp(n: number, min: number, max: number): number {
 export function BubbleNode({
   item,
   type,
-  childCount,
-  canvasRef,
   boundsRef,
+  canvasRef,
   onOpen,
   onEdit,
   onMove,
   onDragChange,
 }: BubbleNodeProps) {
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
+  const offsetX = useMotionValue(0);
+  const offsetY = useMotionValue(0);
   const start = useRef({ x: 0, y: 0 });
   const dragged = useRef(false);
-  const longTimer = useRef<number | null>(null);
-  const longFired = useRef(false);
+  const blockTap = useRef(false);
   const title = type === "category" ? (item as Category).name : (item as Bubble).title;
   const color = item.color;
-  const sizeMul = isBubble(item, type) ? item.size_multiplier : 1.15;
-  const diameter = Math.min(168, 82 + childCount * 7) * sizeMul;
-  const tracking = isBubble(item, type) && item.is_tracking;
-  const progress = isBubble(item, type) ? trackingProgress(item) : null;
-
-  const place = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const { width, height } = canvas.getBoundingClientRect();
-    const r = diameter / 2;
-    const cx = clamp((item.position_x / 100) * width, MARGIN + r, width - MARGIN - r);
-    const cy = clamp((item.position_y / 100) * height, MARGIN + r, height - MARGIN - r);
-    x.set(cx - r);
-    y.set(cy - r);
-  }, [canvasRef, diameter, item.position_x, item.position_y, x, y]);
-
-  useLayoutEffect(() => {
-    place();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const observer = new ResizeObserver(place);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, [canvasRef, place]);
-
-  const clearLong = () => {
-    if (longTimer.current) {
-      window.clearTimeout(longTimer.current);
-      longTimer.current = null;
-    }
-  };
+  const sizeMul = isBubble(item, type) ? item.size_multiplier || 1 : 1;
+  const diameter = BASE * sizeMul;
 
   return (
     <motion.div
@@ -88,18 +54,10 @@ export function BubbleNode({
       dragElastic={0}
       dragPropagation={false}
       dragConstraints={boundsRef}
-      onPointerDownCapture={(event) => {
+      onPointerDownCapture={() => {
         dragged.current = false;
-        longFired.current = false;
-        start.current = { x: event.clientX, y: event.clientY };
-        clearLong();
-        longTimer.current = window.setTimeout(() => {
-          longFired.current = true;
-          onEdit();
-        }, LONG_PRESS_MS);
+        blockTap.current = false;
       }}
-      onPointerUpCapture={clearLong}
-      onPointerCancelCapture={clearLong}
       onDragStart={(_, info) => {
         start.current = { x: info.point.x, y: info.point.y };
       }}
@@ -108,37 +66,54 @@ export function BubbleNode({
           info.point.x - start.current.x,
           info.point.y - start.current.y,
         );
-        if (dist > DRAG_THRESHOLD) {
-          clearLong();
-          if (!dragged.current) {
-            dragged.current = true;
-            onDragChange(true);
-          }
+        if (dist > DRAG_THRESHOLD && !dragged.current) {
+          dragged.current = true;
+          onDragChange(true);
         }
       }}
       onDragEnd={() => {
         const wasDrag = dragged.current;
         onDragChange(false);
-        clearLong();
         const canvas = canvasRef.current;
-        if (!canvas || !wasDrag) return;
+        const dx = offsetX.get();
+        const dy = offsetY.get();
+        if (!wasDrag || !canvas) {
+          offsetX.set(0);
+          offsetY.set(0);
+          return;
+        }
         const { width, height } = canvas.getBoundingClientRect();
-        const maxLeft = Math.max(MARGIN, width - diameter - MARGIN);
-        const maxTop = Math.max(MARGIN, height - diameter - MARGIN);
-        const left = clamp(x.get(), MARGIN, maxLeft);
-        const top = clamp(y.get(), MARGIN, maxTop);
-        x.set(left);
-        y.set(top);
-        const cx = ((left + diameter / 2) / width) * 100;
-        const cy = ((top + diameter / 2) / height) * 100;
-        onMove(cx, cy);
+        if (width < 32 || height < 32) {
+          offsetX.set(0);
+          offsetY.set(0);
+          return;
+        }
+        const r = diameter / 2;
+        const min = ((MARGIN + r) / width) * 100;
+        const maxX = ((width - MARGIN - r) / width) * 100;
+        const minY = ((MARGIN + r) / height) * 100;
+        const maxY = ((height - MARGIN - r) / height) * 100;
+        const nx = clamp(item.position_x + (dx / width) * 100, min, maxX);
+        const ny = clamp(item.position_y + (dy / height) * 100, minY, maxY);
+        onMove(nx, ny);
+        offsetX.set(0);
+        offsetY.set(0);
       }}
       onTap={() => {
-        if (dragged.current || longFired.current) return;
+        if (dragged.current || blockTap.current) return;
         onOpen();
       }}
-      style={{ x, y, width: diameter, height: diameter }}
-      className="absolute left-0 top-0 touch-none select-none"
+      style={{
+        left: `${item.position_x}%`,
+        top: `${item.position_y}%`,
+        width: diameter,
+        height: diameter,
+        marginLeft: -diameter / 2,
+        marginTop: -diameter / 2,
+        x: offsetX,
+        y: offsetY,
+      }}
+      className="absolute touch-none select-none"
       whileTap={{ scale: 0.96 }}
       transition={{ type: "spring", stiffness: 420, damping: 28 }}
     >
@@ -151,36 +126,22 @@ export function BubbleNode({
           backdropFilter: "blur(10px)",
         }}
       >
-        {tracking && progress && (
-          <ProgressRing
-            ratio={progress.ratio}
-            size={diameter + 8}
-            color={color}
-            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-          />
-        )}
         <div className="relative z-[1] px-3 text-center">
           <div className="line-clamp-2 text-[13px] font-extrabold leading-tight tracking-tight text-slate-800">
             {title}
           </div>
-          {tracking && progress && (
-            <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
-              {progress.done}/{progress.target}
-            </div>
-          )}
-          {childCount > 0 && !tracking && (
-            <div className="mt-0.5 text-[10px] font-medium text-slate-500">
-              {childCount} פריטים
-            </div>
-          )}
         </div>
         <button
           type="button"
           aria-label="עריכה"
-          onPointerDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            blockTap.current = true;
+          }}
           onClick={(e) => {
             e.stopPropagation();
-            clearLong();
+            e.preventDefault();
+            blockTap.current = true;
             onEdit();
           }}
           className="absolute -bottom-0.5 -start-0.5 z-[2] grid h-8 w-8 place-items-center rounded-full bg-white/90 text-slate-500 shadow-soft backdrop-blur"

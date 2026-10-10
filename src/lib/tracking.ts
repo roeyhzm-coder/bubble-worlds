@@ -67,6 +67,14 @@ export function removeLastDay(history: string[]): string[] {
   return days;
 }
 
+export function removeDate(history: string[], date = todayKey()): string[] {
+  return uniqueSorted(history).filter((day) => day !== date);
+}
+
+export function hasDate(history: string[], date = todayKey()): boolean {
+  return uniqueSorted(history).includes(date);
+}
+
 export function statusLabel(status: Bubble["status"]): string {
   switch (status) {
     case "active_tracking":

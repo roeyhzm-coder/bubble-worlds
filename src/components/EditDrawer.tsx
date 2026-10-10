@@ -1,49 +1,35 @@
 import { AnimatePresence, motion, useDragControls } from "framer-motion";
-import { Check, Minus, RotateCcw, Trash2, DoorOpen, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { PALETTE } from "../lib/defaults";
-import { computeStreak, statusLabel, trackingProgress } from "../lib/tracking";
 import { useVisualViewport } from "../lib/useVisualViewport";
 import { useApp } from "../state/AppProvider";
-import type { Bubble, BubbleStatus, Category, StreakMode } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
-
-const STATUSES: BubbleStatus[] = [
-  "active_tracking",
-  "focus",
-  "deep_thought",
-  "default",
-];
-
-const STREAKS: StreakMode[] = ["flexible", "strict", "cumulative"];
-const DAY_PRESETS = [21, 30, 60, 90, 120];
 
 export function EditDrawer() {
   const {
-    editing,
-    closeEditor,
+    composer,
+    closeComposer,
     snapshot,
     updateCategory,
     updateBubble,
     deleteCategory,
     deleteBubble,
-    setDrill,
-    setPage,
-    markToday,
-    minusDay,
-    resetTracking,
-    childrenOf,
+    commitCreate,
   } = useApp();
-
-  const category = snapshot.categories.find(
-    (c) => editing?.type === "category" && c.id === editing.id,
-  );
-  const bubble = snapshot.bubbles.find(
-    (b) => editing?.type === "bubble" && b.id === editing.id,
-  );
-  const open = Boolean(category || bubble);
   const { inset, height } = useVisualViewport();
   const dragControls = useDragControls();
+
+  const category =
+    composer?.mode === "edit" && composer.type === "category"
+      ? snapshot.categories.find((c) => c.id === composer.id)
+      : undefined;
+  const bubble =
+    composer?.mode === "edit" && composer.type === "bubble"
+      ? snapshot.bubbles.find((b) => b.id === composer.id)
+      : undefined;
+  const creating = composer?.mode === "create";
+  const open = Boolean(composer);
 
   return (
     <AnimatePresence>
@@ -53,7 +39,7 @@ export function EditDrawer() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={closeEditor}
+          onClick={closeComposer}
         >
           <motion.div
             initial={{ y: "100%" }}
@@ -66,7 +52,7 @@ export function EditDrawer() {
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.55 }}
             onDragEnd={(_, info) => {
-              if (info.offset.y > 90 || info.velocity.y > 700) closeEditor();
+              if (info.offset.y > 90 || info.velocity.y > 700) closeComposer();
             }}
             className="flex w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-soft"
             style={{
@@ -82,7 +68,7 @@ export function EditDrawer() {
               <div className="absolute left-1/2 top-2.5 h-1.5 w-12 -translate-x-1/2 rounded-full bg-slate-200" />
               <button
                 type="button"
-                onClick={closeEditor}
+                onClick={closeComposer}
                 className="grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-slate-600"
                 aria-label="סגירה"
               >
@@ -90,35 +76,38 @@ export function EditDrawer() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 no-scrollbar">
-            {category && (
-              <CategoryForm
-                category={category}
-                onChange={(patch) => updateCategory(category.id, patch)}
-                onDelete={() => deleteCategory(category.id)}
-                onOpen={() => {
-                  setDrill({ kind: "category", id: category.id });
-                  setPage(0);
-                  closeEditor();
-                }}
-              />
-            )}
-            {bubble && (
-              <BubbleForm
-                bubble={bubble}
-                childCount={childrenOf(bubble.id).length}
-                onChange={(patch) => updateBubble(bubble.id, patch)}
-                onDelete={() => deleteBubble(bubble.id)}
-                onOpen={() => {
-                  setDrill({ kind: "bubble", id: bubble.id });
-                  setPage(0);
-                  closeEditor();
-                }}
-                onDone={() => markToday(bubble.id)}
-                onMinus={() => minusDay(bubble.id)}
-                onReset={() => resetTracking(bubble.id)}
-                roleColor={snapshot.colorRoles}
-              />
-            )}
+              {creating && composer && (
+                <CreateForm
+                  type={composer.type}
+                  onCancel={closeComposer}
+                  onCreate={commitCreate}
+                />
+              )}
+              {category && (
+                <ContainerForm
+                  name={category.name}
+                  color={category.color}
+                  showSize={false}
+                  size={1}
+                  onChangeName={(name) => updateCategory(category.id, { name })}
+                  onChangeColor={(color) => updateCategory(category.id, { color })}
+                  onDelete={() => deleteCategory(category.id)}
+                />
+              )}
+              {bubble && (
+                <ContainerForm
+                  name={bubble.title}
+                  color={bubble.color}
+                  showSize
+                  size={bubble.size_multiplier}
+                  onChangeName={(name) => updateBubble(bubble.id, { title: name })}
+                  onChangeColor={(color) => updateBubble(bubble.id, { color })}
+                  onChangeSize={(size_multiplier) =>
+                    updateBubble(bubble.id, { size_multiplier })
+                  }
+                  onDelete={() => deleteBubble(bubble.id)}
+                />
+              )}
             </div>
           </motion.div>
         </motion.div>
@@ -127,55 +116,108 @@ export function EditDrawer() {
   );
 }
 
-function CategoryForm({
-  category,
-  onChange,
-  onDelete,
-  onOpen,
+function CreateForm({
+  type,
+  onCancel,
+  onCreate,
 }: {
-  category: Category;
-  onChange: (patch: Partial<Category>) => void;
+  type: "category" | "bubble";
+  onCancel: () => void;
+  onCreate: (input: {
+    name: string;
+    color: string;
+    size_multiplier: number;
+  }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(PALETTE[0]);
+  const [size, setSize] = useState(1);
+  useEffect(() => {
+    setName("");
+    setColor(PALETTE[0]);
+    setSize(1);
+  }, [type]);
+
+  return (
+    <div className="space-y-3">
+      <RowLabel label={type === "category" ? "שם העולם" : "שם הבועה"} />
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="שם…"
+        className="h-11 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold outline-none ring-1 ring-slate-200"
+      />
+      <RowLabel label="צבע" />
+      <ColorRow value={color} onChange={setColor} />
+      {type === "bubble" && <SizeSlider value={size} onChange={setSize} />}
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-12 flex-1 rounded-xl bg-slate-100 text-sm font-bold text-slate-600"
+        >
+          ביטול
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onCreate({ name, color, size_multiplier: size })
+          }
+          className="h-12 flex-1 rounded-xl bg-slate-900 text-sm font-extrabold text-white"
+        >
+          צור בועה
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ContainerForm({
+  name,
+  color,
+  showSize,
+  size,
+  onChangeName,
+  onChangeColor,
+  onChangeSize,
+  onDelete,
+}: {
+  name: string;
+  color: string;
+  showSize: boolean;
+  size: number;
+  onChangeName: (name: string) => void;
+  onChangeColor: (color: string) => void;
+  onChangeSize?: (size: number) => void;
   onDelete: () => void;
-  onOpen: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
   return (
     <div className="space-y-3">
-      <RowLabel label="שם העולם" />
+      <RowLabel label="שם" />
       <input
-        value={category.name}
-        onChange={(e) => onChange({ name: e.target.value })}
-        enterKeyHint="done"
-        onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center" })}
-        className="h-11 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-slate-400"
+        value={name}
+        onChange={(e) => onChangeName(e.target.value)}
+        className="h-11 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold outline-none ring-1 ring-slate-200"
       />
       <RowLabel label="צבע" />
-      <ColorRow
-        value={category.color}
-        onChange={(color) => onChange({ color })}
-      />
-      <div className="flex gap-2 pt-1">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex h-11 flex-1 items-center justify-center gap-1 rounded-xl bg-slate-900 text-sm font-semibold text-white"
-        >
-          <DoorOpen size={16} />
-          כניסה
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirm(true)}
-          className="grid h-11 w-11 place-items-center rounded-xl bg-rose-50 text-rose-500"
-          aria-label="מחיקה"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
+      <ColorRow value={color} onChange={onChangeColor} />
+      {showSize && onChangeSize && (
+        <SizeSlider value={size} onChange={onChangeSize} />
+      )}
+      <button
+        type="button"
+        onClick={() => setConfirm(true)}
+        className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-rose-50 text-sm font-bold text-rose-500"
+      >
+        <Trash2 size={16} />
+        מחיקה
+      </button>
       <ConfirmDialog
         open={confirm}
-        title="למחוק את העולם?"
-        body="כל הבועות בתוכו יימחקו גם כן."
+        title="למחוק?"
+        body="הפעולה תמחק את הבועה ואת מה שבתוכה."
         onCancel={() => setConfirm(false)}
         onConfirm={onDelete}
       />
@@ -183,292 +225,28 @@ function CategoryForm({
   );
 }
 
-function BubbleForm({
-  bubble,
-  childCount,
+function SizeSlider({
+  value,
   onChange,
-  onDelete,
-  onOpen,
-  onDone,
-  onMinus,
-  onReset,
-  roleColor,
 }: {
-  bubble: Bubble;
-  childCount: number;
-  onChange: (patch: Partial<Bubble>) => void;
-  onDelete: () => void;
-  onOpen: () => void;
-  onDone: () => void;
-  onMinus: () => void;
-  onReset: () => void;
-  roleColor: Record<BubbleStatus, string>;
+  value: number;
+  onChange: (value: number) => void;
 }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [trackOpen, setTrackOpen] = useState(bubble.is_tracking);
-  const [pop, setPop] = useState(false);
-  const progress = trackingProgress(bubble);
-  const streak = useMemo(
-    () =>
-      computeStreak(
-        bubble.tracking_history,
-        bubble.streak_mode,
-        bubble.weekly_frequency,
-      ),
-    [bubble.tracking_history, bubble.streak_mode, bubble.weekly_frequency],
-  );
-
-  useEffect(() => {
-    setTrackOpen(bubble.is_tracking);
-  }, [bubble.is_tracking]);
-
   return (
-    <div className="space-y-3">
-      <RowLabel label="כותרת" />
+    <div className="flex h-12 items-center justify-between rounded-xl bg-slate-50 px-3">
+      <span className="text-xs font-bold text-slate-600">גודל בועה</span>
       <input
-        value={bubble.title}
-        onChange={(e) => onChange({ title: e.target.value })}
-        onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center" })}
-        className="h-11 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-slate-400"
+        type="range"
+        min={0.7}
+        max={1.8}
+        step={0.05}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="mx-3 flex-1 accent-slate-700"
       />
-      <RowLabel label="הערות" />
-      <textarea
-        value={bubble.notes}
-        onChange={(e) => onChange({ notes: e.target.value })}
-        onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center" })}
-        rows={3}
-        className="w-full resize-none rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none ring-1 ring-slate-200 focus:ring-slate-400"
-      />
-
-      <RowLabel label="סטטוס" />
-      <div className="grid grid-cols-2 gap-1.5">
-        {STATUSES.map((status) => (
-          <button
-            key={status}
-            type="button"
-            onClick={() =>
-              onChange({
-                status,
-                color: roleColor[status],
-                is_tracking: status === "active_tracking" ? true : bubble.is_tracking,
-              })
-            }
-            className={`h-11 rounded-xl text-xs font-bold ${
-              bubble.status === status
-                ? "bg-slate-900 text-white"
-                : "bg-slate-50 text-slate-600"
-            }`}
-          >
-            {statusLabel(status)}
-          </button>
-        ))}
-      </div>
-
-      <RowLabel label="צבע" />
-      <ColorRow value={bubble.color} onChange={(color) => onChange({ color })} />
-
-      <div className="flex h-12 items-center justify-between rounded-xl bg-slate-50 px-3">
-        <span className="text-xs font-bold text-slate-600">גודל בועה</span>
-        <input
-          type="range"
-          min={0.7}
-          max={1.8}
-          step={0.05}
-          value={bubble.size_multiplier}
-          onChange={(e) =>
-            onChange({ size_multiplier: Number(e.target.value) })
-          }
-          className="mx-3 flex-1 accent-slate-700"
-        />
-        <span className="w-8 text-end text-[11px] text-slate-400">
-          {bubble.size_multiplier.toFixed(2)}
-        </span>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          const next = !bubble.is_tracking;
-          onChange({
-            is_tracking: next,
-            status: next ? "active_tracking" : bubble.status,
-            color: next ? roleColor.active_tracking : bubble.color,
-          });
-          setTrackOpen(next);
-        }}
-        className="flex h-11 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-sm font-bold text-slate-700"
-      >
-        <span>מנוע מעקב</span>
-        <span className="text-xs text-slate-400">
-          {bubble.is_tracking ? "פעיל" : "כבוי"}
-        </span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {(bubble.is_tracking || trackOpen) && bubble.is_tracking && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden rounded-2xl bg-sky-50/80 p-3"
-          >
-            <div className="mb-2 text-center text-xs font-bold text-slate-500">
-              {progress.done}/{progress.target} · רצף {streak}
-            </div>
-            <motion.button
-              type="button"
-              onClick={() => {
-                onDone();
-                setPop(true);
-                window.setTimeout(() => setPop(false), 500);
-              }}
-              animate={{ scale: pop ? 1.04 : 1 }}
-              className="mb-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-sm font-extrabold text-white shadow-soft"
-            >
-              <Check size={18} />
-              בוצע היום! ✓
-            </motion.button>
-            <div className="mb-2 grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={onMinus}
-                className="flex h-11 items-center justify-center gap-1 rounded-xl bg-white text-xs font-bold text-slate-600"
-              >
-                <Minus size={14} />
-                החסר יום אחד
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmReset(true)}
-                className="flex h-11 items-center justify-center gap-1 rounded-xl bg-white text-xs font-bold text-rose-500"
-              >
-                <RotateCcw size={14} />
-                איפוס מעקב
-              </button>
-            </div>
-            <RowLabel label="ימי יעד" />
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              {DAY_PRESETS.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => onChange({ target_days: n })}
-                  className={`h-9 rounded-lg px-2.5 text-xs font-bold ${
-                    bubble.target_days === n
-                      ? "bg-slate-900 text-white"
-                      : "bg-white text-slate-600"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-              <input
-                type="number"
-                min={1}
-                value={bubble.target_days}
-                onChange={(e) =>
-                  onChange({
-                    target_days: Math.max(1, Number(e.target.value) || 1),
-                  })
-                }
-                className="h-9 w-16 rounded-lg bg-white px-2 text-center text-xs font-bold text-slate-700 outline-none"
-              />
-            </div>
-            <div className="mb-2 flex h-11 items-center justify-between rounded-xl bg-white px-3">
-              <span className="text-xs font-bold text-slate-600">
-                תדירות שבועית
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="grid h-8 w-8 place-items-center rounded-lg bg-slate-100"
-                  onClick={() =>
-                    onChange({
-                      weekly_frequency: Math.max(1, bubble.weekly_frequency - 1),
-                    })
-                  }
-                >
-                  −
-                </button>
-                <span className="w-10 text-center text-sm font-extrabold">
-                  {bubble.weekly_frequency}/7
-                </span>
-                <button
-                  type="button"
-                  className="grid h-8 w-8 place-items-center rounded-lg bg-slate-100"
-                  onClick={() =>
-                    onChange({
-                      weekly_frequency: Math.min(7, bubble.weekly_frequency + 1),
-                    })
-                  }
-                >
-                  +
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {STREAKS.map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => onChange({ streak_mode: mode })}
-                  className={`h-10 rounded-xl text-[11px] font-bold ${
-                    bubble.streak_mode === mode
-                      ? "bg-slate-900 text-white"
-                      : "bg-white text-slate-600"
-                  }`}
-                >
-                  {mode === "strict"
-                    ? "קפדני"
-                    : mode === "flexible"
-                      ? "גמיש"
-                      : "מצטבר"}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="flex gap-2 pt-1">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex h-11 flex-1 items-center justify-center gap-1 rounded-xl bg-slate-900 text-sm font-semibold text-white"
-        >
-          <DoorOpen size={16} />
-          כניסה לעולם
-          {childCount > 0 ? ` (${childCount})` : ""}
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirmDelete(true)}
-          className="grid h-11 w-11 place-items-center rounded-xl bg-rose-50 text-rose-500"
-          aria-label="מחיקה"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        title="למחוק את הבועה?"
-        body="גם כל תתי-הבועות שלה יימחקו."
-        onCancel={() => setConfirmDelete(false)}
-        onConfirm={onDelete}
-      />
-      <ConfirmDialog
-        open={confirmReset}
-        title="לאפס את המעקב?"
-        body="ההיסטוריה והרצף יימחקו, והספירה תתחיל מחדש."
-        confirmLabel="איפוס"
-        onCancel={() => setConfirmReset(false)}
-        onConfirm={() => {
-          onReset();
-          setConfirmReset(false);
-        }}
-      />
+      <span className="w-8 text-end text-[11px] text-slate-400">
+        {value.toFixed(2)}
+      </span>
     </div>
   );
 }

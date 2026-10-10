@@ -14,7 +14,7 @@ const ROLE_ORDER: BubbleStatus[] = [
 ];
 
 export function FocusHub() {
-  const { snapshot, childrenOf, openEditor, setPage, setDrill } = useApp();
+  const { snapshot, childrenOf, setPage, setDrill } = useApp();
   const [colorsOpen, setColorsOpen] = useState(false);
 
   const leaves = useMemo(
@@ -69,8 +69,12 @@ export function FocusHub() {
               color={snapshot.colorRoles[status]}
               items={groups.byStatus.get(status) ?? []}
               onOpen={(b) => {
-                openEditor({ type: "bubble", id: b.id });
-                setPage(1);
+                setDrill(
+                  b.parent_bubble_id
+                    ? { kind: "bubble", id: b.parent_bubble_id }
+                    : { kind: "category", id: b.category_id },
+                );
+                setPage(0);
               }}
               onEnter={(b) => {
                 setDrill({ kind: "bubble", id: b.id });
@@ -86,7 +90,14 @@ export function FocusHub() {
             title="קבוצת צבע"
             color={color}
             items={items}
-            onOpen={(b) => openEditor({ type: "bubble", id: b.id })}
+            onOpen={(b) => {
+              setDrill(
+                b.parent_bubble_id
+                  ? { kind: "bubble", id: b.parent_bubble_id }
+                  : { kind: "category", id: b.category_id },
+              );
+              setPage(0);
+            }}
             onEnter={(b) => {
               setDrill({ kind: "bubble", id: b.id });
               setPage(0);

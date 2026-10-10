@@ -24,9 +24,25 @@ export function saveLocal(snapshot: AppSnapshot): void {
 
 export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnapshot {
   const cats = new Map(local.categories.map((c) => [c.id, c]));
-  for (const cat of remote.categories) cats.set(cat.id, cat);
+  for (const cat of remote.categories) {
+    const prev = cats.get(cat.id);
+    const remoteZero = cat.position_x === 0 && cat.position_y === 0;
+    const keep =
+      remoteZero && prev && (prev.position_x !== 0 || prev.position_y !== 0)
+        ? { ...cat, position_x: prev.position_x, position_y: prev.position_y }
+        : cat;
+    cats.set(cat.id, keep);
+  }
   const bubs = new Map(local.bubbles.map((b) => [b.id, b]));
-  for (const bub of remote.bubbles) bubs.set(bub.id, bub);
+  for (const bub of remote.bubbles) {
+    const prev = bubs.get(bub.id);
+    const remoteZero = bub.position_x === 0 && bub.position_y === 0;
+    const keep =
+      remoteZero && prev && (prev.position_x !== 0 || prev.position_y !== 0)
+        ? { ...bub, position_x: prev.position_x, position_y: prev.position_y }
+        : bub;
+    bubs.set(bub.id, keep);
+  }
   return mergeSeed({
     categories: [...cats.values()],
     bubbles: [...bubs.values()],
