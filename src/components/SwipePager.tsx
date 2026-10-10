@@ -1,5 +1,5 @@
 import { Check, Pencil } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
+import { useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { useApp } from "../state/AppProvider";
 
 interface SwipePagerProps {
@@ -9,152 +9,62 @@ interface SwipePagerProps {
   children: ReactNode[];
 }
 
-const PAGE_THRESHOLD = 36;
-
 export function SwipePager({
   page,
   onPage,
   locked = false,
   children,
 }: SwipePagerProps) {
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const pageRef = useRef(page);
-  const programmatic = useRef(false);
-  const frame = useRef(0);
-  const gesture = useRef<{
-    startX: number;
-    startPage: number;
-    startLeft: number;
-    pointerId: number;
-  } | null>(null);
-  const maxPage = Math.max(0, children.length - 1);
-  pageRef.current = page;
+  const activeTab = Math.max(0, Math.min(2, page));
+  const start = useRef<{ x: number; y: number } | null>(null);
 
-  const clampPage = (index: number) => Math.max(0, Math.min(maxPage, index));
-
-  const neighborPage = (from: number, direction: number) =>
-    clampPage(from + (direction > 0 ? 1 : direction < 0 ? -1 : 0));
-
-  const scrollToPage = (index: number, smooth: boolean) => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const width = scroller.clientWidth;
-    if (width <= 0) return;
-    const next = clampPage(index);
-    programmatic.current = true;
-    scroller.scrollTo({
-      left: next * width,
-      behavior: smooth ? "smooth" : "auto",
-    });
-    window.setTimeout(() => {
-      programmatic.current = false;
-    }, smooth ? 380 : 60);
+  const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (locked) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    start.current = { x: touch.clientX, y: touch.clientY };
   };
 
-  const commitNeighbor = (from: number, direction: number) => {
-    const next = neighborPage(from, direction);
-    if (next !== pageRef.current) onPage(next);
-    scrollToPage(next, true);
-  };
-
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const width = scroller.clientWidth || 1;
-    if (Math.abs(scroller.scrollLeft - page * width) < 12) return;
-    scrollToPage(page, true);
-  }, [page]);
-
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const align = () => scrollToPage(pageRef.current, false);
-    const observer = new ResizeObserver(align);
-    observer.observe(scroller);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-
-    const skip = (target: EventTarget | null) => {
-      const node = target as HTMLElement | null;
-      return Boolean(node?.closest("input, textarea, select, [contenteditable='true']"));
-    };
-
-    const onDown = (event: PointerEvent) => {
-      if (locked || event.button !== 0 || skip(event.target)) return;
-      gesture.current = {
-        startX: event.clientX,
-        startPage: pageRef.current,
-        startLeft: scroller.scrollLeft,
-        pointerId: event.pointerId,
-      };
-    };
-
-    const onUp = (event: PointerEvent) => {
-      const g = gesture.current;
-      if (!g || g.pointerId !== event.pointerId) return;
-      gesture.current = null;
-      const width = scroller.clientWidth || 1;
-      const dx = event.clientX - g.startX;
-      const dScroll = scroller.scrollLeft - g.startLeft;
-      const moved = Math.abs(dx) >= PAGE_THRESHOLD || Math.abs(dScroll) >= width * 0.12;
-      if (!moved) {
-        scrollToPage(g.startPage, true);
-        if (pageRef.current !== g.startPage) onPage(g.startPage);
-        return;
-      }
-      const direction = dScroll !== 0 ? Math.sign(dScroll) : Math.sign(-dx);
-      commitNeighbor(g.startPage, direction);
-    };
-
-    scroller.addEventListener("pointerdown", onDown, { passive: true });
-    window.addEventListener("pointerup", onUp, { passive: true });
-    window.addEventListener("pointercancel", onUp, { passive: true });
-    return () => {
-      scroller.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-    };
-  }, [locked, maxPage, onPage]);
-
-  const onScroll = (event: UIEvent<HTMLDivElement>) => {
-    if (programmatic.current || locked) return;
-    const scroller = event.currentTarget;
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => {
-      const width = scroller.clientWidth || 1;
-      const raw = Math.round(scroller.scrollLeft / width);
-      const origin = gesture.current?.startPage ?? pageRef.current;
-      if (Math.abs(raw - origin) > 1) {
-        commitNeighbor(origin, raw - origin);
-        return;
-      }
-      const next = clampPage(raw);
-      if (next !== pageRef.current) onPage(next);
-    });
+  const onTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const origin = start.current;
+    start.current = null;
+    if (!origin || locked) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const deltaX = origin.x - touch.clientX;
+    const deltaY = origin.y - touch.clientY;
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
+    if (Math.abs(deltaX) <= 45) return;
+    if (deltaX > 45 && activeTab < 2) onPage(activeTab + 1);
+    if (deltaX < -45 && activeTab > 0) onPage(activeTab - 1);
   };
 
   return (
     <div
-      ref={scrollerRef}
       dir="ltr"
-      onScroll={onScroll}
-      className="pager-scroller flex h-full min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden no-scrollbar"
+      className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
       style={{ direction: "ltr" }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={() => {
+        start.current = null;
+      }}
     >
-      {children.map((child, index) => (
-        <div
-          key={index}
-          data-pager-panel={index}
-          dir="rtl"
-          className="pager-panel h-full w-full min-w-full shrink-0 snap-start snap-always overflow-hidden"
-        >
-          {child}
-        </div>
-      ))}
+      <div
+        className="flex h-full w-[300%]"
+        style={{
+          transform: `translateX(-${(activeTab * 100) / 3}%)`,
+          transition: "transform 280ms cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
+        {children.map((child, index) => (
+          <div key={index} dir="rtl" className="h-full w-1/3 min-w-0 overflow-hidden">
+            {child}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

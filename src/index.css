@@ -44,15 +44,3 @@ textarea {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-
-.pager-scroller {
-  scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.pager-panel {
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-}
