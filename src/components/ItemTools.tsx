@@ -168,7 +168,7 @@ function ActionTools({ item }: { item: Bubble }) {
     if (!title) return;
     updateBubble(item.id, {
       action_steps: [
-        ...item.action_steps,
+        ...(item.action_steps ?? []),
         { id: `step-${crypto.randomUUID()}`, title, done: false },
       ],
     });
@@ -221,14 +221,14 @@ function ActionTools({ item }: { item: Bubble }) {
 
       <div className="text-[11px] font-bold text-slate-400">תתי־צעדים</div>
       <div className="space-y-1">
-        {item.action_steps.map((step) => (
+        {(item.action_steps ?? []).map((step) => (
           <div key={step.id} className="flex h-10 items-center gap-2 rounded-xl bg-slate-50 px-2">
             <input
               type="checkbox"
               checked={step.done}
               onChange={(e) =>
                 updateBubble(item.id, {
-                  action_steps: item.action_steps.map((row) =>
+                  action_steps: (item.action_steps ?? []).map((row) =>
                     row.id === step.id ? { ...row, done: e.target.checked } : row,
                   ),
                 })
@@ -239,7 +239,7 @@ function ActionTools({ item }: { item: Bubble }) {
               value={step.title}
               onChange={(e) =>
                 updateBubble(item.id, {
-                  action_steps: item.action_steps.map((row) =>
+                  action_steps: (item.action_steps ?? []).map((row) =>
                     row.id === step.id ? { ...row, title: e.target.value } : row,
                   ),
                 })
@@ -250,7 +250,7 @@ function ActionTools({ item }: { item: Bubble }) {
               type="button"
               onClick={() =>
                 updateBubble(item.id, {
-                  action_steps: item.action_steps.filter((row) => row.id !== step.id),
+                  action_steps: (item.action_steps ?? []).filter((row) => row.id !== step.id),
                 })
               }
               className="grid h-8 w-8 place-items-center text-rose-400"

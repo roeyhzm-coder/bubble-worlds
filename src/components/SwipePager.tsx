@@ -1,5 +1,7 @@
 import { animate, motion, useMotionValue } from "framer-motion";
+import { Check, Pencil } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useApp } from "../state/AppProvider";
 
 interface SwipePagerProps {
   page: number;
@@ -8,9 +10,9 @@ interface SwipePagerProps {
   children: ReactNode[];
 }
 
-const AXIS_LOCK = 10;
-const PAGE_DISTANCE = 56;
-const PAGE_VELOCITY = 420;
+const AXIS_LOCK = 8;
+const PAGE_DISTANCE = 40;
+const PAGE_VELOCITY = 320;
 
 export function SwipePager({
   page,
@@ -49,29 +51,36 @@ export function SwipePager({
   }, []);
 
   useEffect(() => {
-    void animate(x, -page * width, { type: "spring", stiffness: 340, damping: 36 });
+    void animate(x, -page * width, { type: "spring", stiffness: 380, damping: 38 });
   }, [page, width, x]);
 
   useEffect(() => {
     const el = frameRef.current;
     if (!el) return;
 
+    const maxPage = () => Math.max(0, children.length - 1);
+
     const settle = (fromDx: number) => {
       const w = widthRef.current;
       const current = pageRef.current;
-      const max = children.length - 1;
       let pageNext = current;
-      if (fromDx <= -PAGE_DISTANCE) pageNext = Math.min(max, current + 1);
+      if (fromDx <= -PAGE_DISTANCE) pageNext = Math.min(maxPage(), current + 1);
       if (fromDx >= PAGE_DISTANCE) pageNext = Math.max(0, current - 1);
       onPage(pageNext);
-      void animate(x, -pageNext * w, { type: "spring", stiffness: 340, damping: 36 });
+      void animate(x, -pageNext * w, { type: "spring", stiffness: 380, damping: 38 });
+    };
+
+    const skipTarget = (target: EventTarget | null) => {
+      const node = target as HTMLElement | null;
+      if (!node) return false;
+      if (node.closest("[data-no-pager-swipe]")) return true;
+      if (node.closest("input, textarea, select, [contenteditable='true']")) return true;
+      return false;
     };
 
     const onDown = (event: PointerEvent) => {
       if (lockedRef.current || event.button !== 0) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-no-pager-swipe]")) return;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (skipTarget(event.target)) return;
       gesture.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -85,14 +94,16 @@ export function SwipePager({
 
     const onMove = (event: PointerEvent) => {
       const g = gesture.current;
-      if (!g?.active || g.pointerId !== event.pointerId || lockedRef.current) return;
+      if (!g?.active || g.pointerId !== event.pointerId) return;
+      if (lockedRef.current) return;
       const dx = event.clientX - g.startX;
       const dy = event.clientY - g.startY;
       if (!g.axis) {
         if (Math.abs(dx) < AXIS_LOCK && Math.abs(dy) < AXIS_LOCK) return;
-        g.axis = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+        g.axis = Math.abs(dx) >= Math.abs(dy) * 0.85 ? "h" : "v";
       }
       if (g.axis !== "h") return;
+      event.preventDefault();
       if (el.hasPointerCapture?.(event.pointerId) !== true) {
         try {
           el.setPointerCapture(event.pointerId);
@@ -100,11 +111,10 @@ export function SwipePager({
           /* ignore */
         }
       }
-      event.preventDefault();
       const w = widthRef.current;
       const raw = -pageRef.current * w + dx;
-      const min = -w * (children.length - 1);
-      x.set(Math.min(24, Math.max(min - 24, raw)));
+      const min = -w * maxPage();
+      x.set(Math.min(28, Math.max(min - 28, raw)));
       g.lastX = event.clientX;
       g.lastT = event.timeStamp;
     };
@@ -116,8 +126,8 @@ export function SwipePager({
       if (g.axis !== "h") {
         void animate(x, -pageRef.current * widthRef.current, {
           type: "spring",
-          stiffness: 340,
-          damping: 36,
+          stiffness: 380,
+          damping: 38,
         });
         gesture.current = null;
         return;
@@ -132,15 +142,15 @@ export function SwipePager({
       gesture.current = null;
     };
 
-    el.addEventListener("pointerdown", onDown, { passive: true });
-    el.addEventListener("pointermove", onMove, { passive: false });
-    el.addEventListener("pointerup", onUp, { passive: true });
-    el.addEventListener("pointercancel", onUp, { passive: true });
+    el.addEventListener("pointerdown", onDown, { capture: true, passive: true });
+    window.addEventListener("pointermove", onMove, { capture: true, passive: false });
+    window.addEventListener("pointerup", onUp, { capture: true, passive: true });
+    window.addEventListener("pointercancel", onUp, { capture: true, passive: true });
     return () => {
-      el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
     };
   }, [children.length, onPage, x]);
 
@@ -148,7 +158,8 @@ export function SwipePager({
     <div
       ref={frameRef}
       dir="ltr"
-      className="relative min-h-0 flex-1 overflow-hidden touch-pan-y"
+      className="relative min-h-0 flex-1 overflow-hidden overflow-x-hidden"
+      style={{ touchAction: "pan-y" }}
     >
       <motion.div
         className="flex h-full"
@@ -158,7 +169,7 @@ export function SwipePager({
           <div
             key={index}
             dir="rtl"
-            className="h-full shrink-0 overflow-hidden"
+            className="h-full min-w-0 shrink-0 overflow-hidden overflow-x-hidden"
             style={{ width }}
           >
             {child}
@@ -176,26 +187,52 @@ export function PageSwitcher({
   page: number;
   onPage: (page: number) => void;
 }) {
+  const { snapshot, setPageLabels } = useApp();
+  const [editing, setEditing] = useState(false);
+  const labels = snapshot.pageLabels;
   const tabs = [
-    { id: 0, label: "🌐 עולמות" },
-    { id: 1, label: "🎯 מוקדי פוקוס" },
-    { id: 2, label: "⚙️ ניהול משולשים" },
+    { id: 0, emoji: "🌐", key: "map" as const, value: labels.map },
+    { id: 1, emoji: "🎯", key: "hub" as const, value: labels.hub },
+    { id: 2, emoji: "⚙️", key: "studio" as const, value: labels.studio },
   ];
 
   return (
-    <div dir="rtl" className="mx-auto mt-1.5 flex h-11 w-full max-w-lg rounded-2xl bg-white p-1 shadow-soft">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onPage(tab.id)}
-          className={`h-9 min-w-0 flex-1 truncate rounded-xl px-1 text-[11px] font-extrabold transition ${
-            page === tab.id ? "bg-slate-900 text-white" : "text-slate-500"
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className="mx-auto mt-1.5 flex w-full max-w-lg items-center gap-1.5">
+      <div
+        dir="ltr"
+        className="flex h-11 min-w-0 flex-1 rounded-2xl bg-white p-1 shadow-soft"
+      >
+        {tabs.map((tab) =>
+          editing ? (
+            <input
+              key={tab.id}
+              value={tab.value}
+              onChange={(e) => setPageLabels({ [tab.key]: e.target.value })}
+              className="h-9 min-w-0 flex-1 rounded-xl bg-slate-50 px-1 text-center text-[11px] font-extrabold text-slate-800 outline-none"
+              aria-label={`שם לשונית ${tab.emoji}`}
+            />
+          ) : (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onPage(tab.id)}
+              className={`h-9 min-w-0 flex-1 truncate rounded-xl px-1 text-[11px] font-extrabold transition ${
+                page === tab.id ? "bg-slate-900 text-white" : "text-slate-500"
+              }`}
+            >
+              {tab.emoji} {tab.value}
+            </button>
+          ),
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => setEditing((v) => !v)}
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-slate-500 shadow-soft"
+        aria-label={editing ? "סיום עריכת שמות" : "עריכת שמות הלשוניות"}
+      >
+        {editing ? <Check size={16} /> : <Pencil size={15} />}
+      </button>
     </div>
   );
 }

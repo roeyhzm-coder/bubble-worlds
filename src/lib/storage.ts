@@ -7,12 +7,12 @@ export function loadLocal(): AppSnapshot {
     if (!raw) return mergeSeed(EMPTY_SNAPSHOT);
     const parsed = JSON.parse(raw) as Partial<AppSnapshot>;
     return mergeSeed({
-      categories: parsed.categories ?? [],
-      bubbles: parsed.bubbles ?? [],
+      categories: Array.isArray(parsed.categories) ? parsed.categories : [],
+      bubbles: Array.isArray(parsed.bubbles) ? parsed.bubbles : [],
       colorRoles: parsed.colorRoles ?? EMPTY_SNAPSHOT.colorRoles,
       pageLabels: parsed.pageLabels ?? EMPTY_SNAPSHOT.pageLabels,
       listViews: parsed.listViews ?? {},
-      triangleTypes: parsed.triangleTypes ?? [],
+      triangleTypes: Array.isArray(parsed.triangleTypes) ? parsed.triangleTypes : [],
     });
   } catch {
     return mergeSeed(EMPTY_SNAPSHOT);
@@ -56,8 +56,8 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
         keep.action_steps?.length ? keep.action_steps : prev?.action_steps ?? [],
     });
   }
-  const types = new Map(local.triangleTypes.map((item) => [item.id, item]));
-  for (const type of remote.triangleTypes) types.set(type.id, type);
+  const types = new Map((local.triangleTypes ?? []).map((item) => [item.id, item]));
+  for (const type of remote.triangleTypes ?? []) types.set(type.id, type);
   return mergeSeed({
     categories: [...cats.values()],
     bubbles: [...bubs.values()],

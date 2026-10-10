@@ -12,7 +12,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
 
   return (
-    <div className="flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden bg-canvas">
+    <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden overflow-x-hidden bg-canvas">
       <header className="shrink-0 px-3 pb-1 pt-[max(0.5rem,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between px-1">
           <div className="text-lg font-extrabold tracking-tight text-slate-800">

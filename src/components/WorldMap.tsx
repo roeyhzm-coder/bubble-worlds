@@ -35,7 +35,7 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
   const canvasItems = drill.kind === "root" ? visibleCategories : visibleBubbles;
 
   return (
-    <section className="flex h-full flex-col">
+    <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
       <div className="flex shrink-0 items-start justify-between gap-2 px-3 pb-1">
         <div className="min-w-0 space-y-1.5">
           {drill.kind !== "root" && parentCrumb && (

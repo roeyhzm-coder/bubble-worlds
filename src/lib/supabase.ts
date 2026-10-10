@@ -59,10 +59,12 @@ function normalizeCategory(row: Category): Category {
 function normalizeBubble(row: RemoteBubble): Bubble {
   return {
     ...row,
+    title: row.title ?? "",
+    notes: row.notes ?? "",
     tracking_history: asHistory(row.tracking_history),
     container_type: asWorldKind(row.container_type),
-    triangle_id: typeof row.triangle_id === "string" ? row.triangle_id : null,
-    due_at: typeof row.due_at === "string" ? row.due_at : null,
+    triangle_id: typeof row.triangle_id === "string" && row.triangle_id ? row.triangle_id : null,
+    due_at: typeof row.due_at === "string" && row.due_at ? row.due_at : null,
     due_label: typeof row.due_label === "string" ? row.due_label : "",
     action_done: Boolean(row.action_done),
     action_steps: asActionSteps(row.action_steps),

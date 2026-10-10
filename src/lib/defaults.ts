@@ -261,14 +261,16 @@ function asWorldKind(value: unknown): WorldKind | null {
 }
 
 export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
-  const catIds = new Set(snapshot.categories.map((c) => c.id));
-  const bubIds = new Set(snapshot.bubbles.map((b) => b.id));
+  const sourceCats = Array.isArray(snapshot.categories) ? snapshot.categories : [];
+  const sourceBubs = Array.isArray(snapshot.bubbles) ? snapshot.bubbles : [];
+  const catIds = new Set(sourceCats.map((c) => c.id));
+  const bubIds = new Set(sourceBubs.map((b) => b.id));
   const categories = [
-    ...snapshot.categories.map((c) => restoreSeedPosition(c, DEFAULT_CATEGORIES)),
+    ...sourceCats.map((c) => restoreSeedPosition(c, DEFAULT_CATEGORIES)),
     ...DEFAULT_CATEGORIES.filter((c) => !catIds.has(c.id)),
   ];
   const bubbles = unstickClusteredBubbles([
-    ...snapshot.bubbles.map((b) => restoreSeedPosition(b, DEFAULT_BUBBLES)),
+    ...sourceBubs.map((b) => restoreSeedPosition(b, DEFAULT_BUBBLES)),
     ...DEFAULT_BUBBLES.filter((b) => !bubIds.has(b.id)),
   ]);
   return {
@@ -293,7 +295,10 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
         due_at: bubble.due_at ?? null,
         due_label: bubble.due_label ?? "",
         action_done: Boolean(bubble.action_done),
-        action_steps: bubble.action_steps ?? [],
+        action_steps: Array.isArray(bubble.action_steps) ? bubble.action_steps : [],
+        tracking_history: Array.isArray(bubble.tracking_history) ? bubble.tracking_history : [],
+        notes: bubble.notes ?? "",
+        title: bubble.title ?? "",
       };
     }),
     colorRoles: { ...DEFAULT_COLOR_ROLES, ...snapshot.colorRoles },

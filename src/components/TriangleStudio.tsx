@@ -21,13 +21,26 @@ export function TriangleStudio() {
   const types = snapshot.triangleTypes.slice().sort((a, b) => a.order_index - b.order_index);
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="px-3 pb-2">
-        <div className="text-[15px] font-extrabold text-slate-800">ניהול משולשים</div>
-        <div className="text-[11px] text-slate-400">שם, צבע ותבנית כלים לכל סוג</div>
+    <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
+      <div className="flex items-start justify-between gap-2 px-3 pb-2">
+        <div>
+          <div className="text-[15px] font-extrabold text-slate-800">
+            {snapshot.pageLabels.studio}
+          </div>
+          <div className="text-[11px] text-slate-400">שם, צבע ותבנית כלים לכל סוג</div>
+        </div>
+        {openId && (
+          <button
+            type="button"
+            onClick={() => setOpenId(null)}
+            className="h-8 rounded-lg px-2 text-[11px] font-extrabold text-slate-500"
+          >
+            כיווץ הכל
+          </button>
+        )}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-24 no-scrollbar">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 pb-24 no-scrollbar">
         {types.map((type, index) => {
           const open = openId === type.id;
           const count = snapshot.bubbles.filter((item) => item.triangle_id === type.id).length;
@@ -40,12 +53,19 @@ export function TriangleStudio() {
                 <button
                   type="button"
                   onClick={() => setOpenId(open ? null : type.id)}
-                  className="min-w-0 flex-1 text-start"
+                  className="flex min-w-0 flex-1 items-center gap-1 text-start"
                 >
-                  <div className="truncate text-sm font-extrabold text-slate-800">{type.name}</div>
-                  <div className="text-[11px] font-bold text-slate-400">
-                    {templateLabel(type.template)} · {count} פריטים
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-extrabold text-slate-800">{type.name}</div>
+                    <div className="text-[11px] font-bold text-slate-400">
+                      {templateLabel(type.template)} · {count} פריטים
+                    </div>
                   </div>
+                  {open ? (
+                    <ChevronUp size={16} className="shrink-0 text-slate-400" />
+                  ) : (
+                    <ChevronDown size={16} className="shrink-0 text-slate-400" />
+                  )}
                 </button>
                 <button
                   type="button"

@@ -20,8 +20,8 @@ export function trackingProgress(bubble: Bubble): {
   target: number;
   ratio: number;
 } {
-  const done = uniqueSorted(bubble.tracking_history).length;
-  const target = Math.max(1, bubble.target_days);
+  const done = uniqueSorted(bubble.tracking_history ?? []).length;
+  const target = Math.max(1, bubble.target_days || 1);
   return { done, target, ratio: Math.min(1, done / target) };
 }
 

@@ -123,7 +123,7 @@ export function nextWeekdayIso(dayIndex: number): string {
 }
 
 export function dueText(item: Pick<Bubble, "due_at" | "due_label">): string {
-  if (item.due_label.trim()) return item.due_label.trim();
+  if (item.due_label?.trim()) return item.due_label.trim();
   if (!item.due_at) return "";
   const date = item.due_at.slice(0, 10);
   const weekday = WEEKDAYS[new Date(`${date}T12:00:00`).getDay()];

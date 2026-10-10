@@ -22,7 +22,7 @@ export function ConfirmDialog({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[80] grid place-items-center bg-slate-900/30 px-6"
+          className="fixed inset-0 z-[80] grid place-items-center bg-slate-900/30 px-6 py-[max(1rem,env(safe-area-inset-top))]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -32,7 +32,7 @@ export function ConfirmDialog({
             initial={{ y: 16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 12, opacity: 0 }}
-            className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-soft"
+            className="max-h-[min(80dvh,32rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-soft"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-2">
