@@ -208,7 +208,10 @@ function ContainerForm({
       )}
       <button
         type="button"
-        onClick={() => setConfirm(true)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirm(true);
+        }}
         className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-rose-50 text-sm font-bold text-rose-500"
       >
         <Trash2 size={16} />

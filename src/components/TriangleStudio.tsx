@@ -87,7 +87,10 @@ export function TriangleStudio() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPendingDelete(type.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPendingDelete(type.id);
+                  }}
                   className="grid h-9 w-8 place-items-center text-rose-400"
                   aria-label="מחיקה"
                 >

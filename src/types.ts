@@ -94,6 +94,7 @@ export interface AppSnapshot {
   listViews: Record<string, boolean>;
   triangleTypes: TriangleType[];
   dailyTasks: DailyTask[];
+  deletedIds: string[];
 }
 
 export type DrillNode =

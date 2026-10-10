@@ -124,7 +124,10 @@ export function InnerList({ items }: { items: Bubble[] }) {
                 )}
                 <button
                   type="button"
-                  onClick={() => setPendingDelete(item.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPendingDelete(item.id);
+                  }}
                   className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
                   aria-label="מחיקה"
                 >

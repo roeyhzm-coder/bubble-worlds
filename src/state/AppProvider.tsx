@@ -359,16 +359,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteCategory = useCallback(
     (id: string) => {
-      mutate((prev) => ({
-        ...prev,
-        categories: prev.categories.filter((c) => c.id !== id),
-        bubbles: prev.bubbles.filter((b) => b.category_id !== id),
-      }));
+      const current = snapshotRef.current;
+      const related = current.bubbles.filter((b) => b.category_id === id).map((b) => b.id);
+      const deletedIds = [...new Set([...(current.deletedIds ?? []), id, ...related])];
+      const next = {
+        ...current,
+        categories: current.categories.filter((c) => c.id !== id),
+        bubbles: current.bubbles.filter((b) => b.category_id !== id),
+        deletedIds,
+      };
+      ignoreRemoteUntil.current = Date.now() + 2500;
+      setSnapshot(next);
+      saveLocal(next);
       void deleteCategoryRemote(id);
+      if (related.length) void deleteBubbleRemote(related);
       if (drill.kind === "category" && drill.id === id) setDrill({ kind: "root" });
       setComposer(null);
     },
-    [drill, mutate],
+    [drill],
   );
 
   const descendantIds = useCallback((id: string, list: Bubble[]): string[] => {
@@ -378,18 +386,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteBubble = useCallback(
     (id: string) => {
-      mutate((prev) => {
-        const remove = new Set([id, ...descendantIds(id, prev.bubbles)]);
-        return {
-          ...prev,
-          bubbles: prev.bubbles.filter((b) => !remove.has(b.id)),
-        };
-      });
-      void deleteBubbleRemote(id);
-      if (drill.kind === "bubble" && drill.id === id) setDrill({ kind: "root" });
+      const current = snapshotRef.current;
+      const remove = [id, ...descendantIds(id, current.bubbles)];
+      const deletedIds = [...new Set([...(current.deletedIds ?? []), ...remove])];
+      const next = {
+        ...current,
+        bubbles: current.bubbles.filter((b) => !remove.includes(b.id)),
+        deletedIds,
+      };
+      ignoreRemoteUntil.current = Date.now() + 2500;
+      setSnapshot(next);
+      saveLocal(next);
+      void deleteBubbleRemote(remove);
+      if (drill.kind === "bubble" && remove.includes(drill.id)) setDrill({ kind: "root" });
       setComposer(null);
     },
-    [descendantIds, drill, mutate],
+    [descendantIds, drill],
   );
 
   const moveNode = useCallback(

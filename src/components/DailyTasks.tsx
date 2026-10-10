@@ -71,7 +71,10 @@ export function DailyTasks() {
               />
               <button
                 type="button"
-                onClick={() => deleteDailyTask(item.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteDailyTask(item.id);
+                }}
                 className="grid h-10 w-9 shrink-0 place-items-center text-rose-400"
                 aria-label="מחיקה"
               >

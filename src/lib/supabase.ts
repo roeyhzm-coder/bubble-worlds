@@ -95,6 +95,7 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     listViews: asListViews(map.list_views),
     triangleTypes: asTriangleTypes(map.triangle_types),
     dailyTasks: applyDailyRollover(asDailyTasks(map.daily_tasks)),
+    deletedIds: [],
   };
 }
 
@@ -115,9 +116,12 @@ export async function deleteCategoryRemote(id: string): Promise<void> {
   await supabase.from(BW_TABLES.categories).delete().eq("id", id);
 }
 
-export async function deleteBubbleRemote(id: string): Promise<void> {
+export async function deleteBubbleRemote(ids: string | string[]): Promise<void> {
   if (!supabase) return;
-  await supabase.from(BW_TABLES.bubbles).delete().eq("id", id);
+  const list = Array.isArray(ids) ? ids : [ids];
+  if (list.length === 0) return;
+  const { error } = await supabase.from(BW_TABLES.bubbles).delete().in("id", list);
+  if (error) console.warn("delete bubble", error.message);
 }
 
 export async function upsertSetting(key: string, value: unknown): Promise<void> {
