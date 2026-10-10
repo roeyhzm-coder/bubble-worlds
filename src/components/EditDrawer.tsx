@@ -1,8 +1,9 @@
-import { AnimatePresence, motion } from "framer-motion";
-import { Check, Minus, RotateCcw, Trash2, DoorOpen } from "lucide-react";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
+import { Check, Minus, RotateCcw, Trash2, DoorOpen, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PALETTE } from "../lib/defaults";
 import { computeStreak, statusLabel, trackingProgress } from "../lib/tracking";
+import { useVisualViewport } from "../lib/useVisualViewport";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, BubbleStatus, Category, StreakMode } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -41,6 +42,8 @@ export function EditDrawer() {
     (b) => editing?.type === "bubble" && b.id === editing.id,
   );
   const open = Boolean(category || bubble);
+  const { inset, height } = useVisualViewport();
+  const dragControls = useDragControls();
 
   return (
     <AnimatePresence>
@@ -57,10 +60,36 @@ export function EditDrawer() {
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 280 }}
-            className="max-h-[86vh] w-full overflow-y-auto rounded-t-3xl bg-white px-4 pb-8 pt-3 shadow-soft no-scrollbar"
+            drag="y"
+            dragListener={false}
+            dragControls={dragControls}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.55 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 90 || info.velocity.y > 700) closeEditor();
+            }}
+            className="flex w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-soft"
+            style={{
+              maxHeight: Math.min(height * 0.92, height - 8),
+              paddingBottom: Math.max(inset, 16) + 12,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200" />
+            <div
+              className="relative flex h-12 shrink-0 items-center justify-end px-3"
+              onPointerDown={(event) => dragControls.start(event)}
+            >
+              <div className="absolute left-1/2 top-2.5 h-1.5 w-12 -translate-x-1/2 rounded-full bg-slate-200" />
+              <button
+                type="button"
+                onClick={closeEditor}
+                className="grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-slate-600"
+                aria-label="סגירה"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 no-scrollbar">
             {category && (
               <CategoryForm
                 category={category}
@@ -90,6 +119,7 @@ export function EditDrawer() {
                 roleColor={snapshot.colorRoles}
               />
             )}
+            </div>
           </motion.div>
         </motion.div>
       )}
@@ -115,6 +145,8 @@ function CategoryForm({
       <input
         value={category.name}
         onChange={(e) => onChange({ name: e.target.value })}
+        enterKeyHint="done"
+        onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center" })}
         className="h-11 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-slate-400"
       />
       <RowLabel label="צבע" />
@@ -197,12 +229,14 @@ function BubbleForm({
       <input
         value={bubble.title}
         onChange={(e) => onChange({ title: e.target.value })}
+        onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center" })}
         className="h-11 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-slate-400"
       />
       <RowLabel label="הערות" />
       <textarea
         value={bubble.notes}
         onChange={(e) => onChange({ notes: e.target.value })}
+        onFocus={(e) => e.currentTarget.scrollIntoView({ block: "center" })}
         rows={3}
         className="w-full resize-none rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none ring-1 ring-slate-200 focus:ring-slate-400"
       />

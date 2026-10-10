@@ -21,27 +21,49 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
   } = useApp();
 
   const parentCrumb = breadcrumbs[breadcrumbs.length - 2];
+  const backLabel =
+    parentCrumb?.node.kind === "root"
+      ? "חזרה לעולם הראשי"
+      : parentCrumb
+        ? `חזרה ל${parentCrumb.label}`
+        : "חזרה";
 
   return (
     <section className="flex h-full flex-col">
-      <div className="flex h-12 items-center gap-2 px-3">
+      <div className="shrink-0 space-y-1.5 px-3 pb-1">
         {drill.kind !== "root" && parentCrumb && (
           <button
             type="button"
             onClick={() => setDrill(parentCrumb.node)}
-            className="inline-flex h-9 items-center gap-1 rounded-xl bg-white px-2.5 text-sm font-semibold text-slate-600 shadow-soft"
+            className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-white px-3.5 text-[15px] font-extrabold text-slate-800 shadow-soft"
           >
-            <ArrowRight size={16} />
-            חזרה
+            <ArrowRight size={20} />
+            {backLabel}
           </button>
         )}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-extrabold text-slate-800">
-            {currentTitle}
-          </div>
+        <div className="min-w-0">
+          {drill.kind !== "root" && (
+            <div className="truncate text-[13px] font-extrabold text-slate-800">
+              {currentTitle}
+            </div>
+          )}
           {breadcrumbs.length > 1 && (
-            <div className="truncate text-[11px] text-slate-400">
-              {breadcrumbs.map((c) => c.label).join(" · ")}
+            <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
+              {breadcrumbs.map((crumb, index) => (
+                <button
+                  key={crumb.id}
+                  type="button"
+                  onClick={() => setDrill(crumb.node)}
+                  className={
+                    index === breadcrumbs.length - 1
+                      ? "font-bold text-slate-600"
+                      : "underline-offset-2 hover:underline"
+                  }
+                >
+                  {crumb.label}
+                  {index < breadcrumbs.length - 1 ? " ·" : ""}
+                </button>
+              ))}
             </div>
           )}
         </div>

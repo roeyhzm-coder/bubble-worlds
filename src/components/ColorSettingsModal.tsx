@@ -34,7 +34,13 @@ export function ColorSettingsModal({ open, onClose }: ColorSettingsModalProps) {
             initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
-            className="w-full max-w-md rounded-t-3xl bg-white p-4 shadow-soft sm:rounded-3xl"
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.5 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 90 || info.velocity.y > 700) onClose();
+            }}
+            className="w-full max-w-md rounded-t-3xl bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-soft sm:rounded-3xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex h-10 items-center justify-between">

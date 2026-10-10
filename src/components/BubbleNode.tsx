@@ -19,6 +19,8 @@ function isBubble(_item: Category | Bubble, type: "category" | "bubble"): _item 
   return type === "bubble";
 }
 
+const DRAG_THRESHOLD = 14;
+
 export function BubbleNode({
   item,
   type,
@@ -42,33 +44,48 @@ export function BubbleNode({
   const tracking = isBubble(item, type) && item.is_tracking;
   const progress = isBubble(item, type) ? trackingProgress(item) : null;
 
+  const clearTap = () => {
+    if (tapTimer.current) {
+      window.clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+    }
+  };
+
   return (
     <motion.div
+      data-no-pager-swipe
       drag
       dragMomentum={false}
       dragElastic={0.05}
+      dragPropagation={false}
       onPointerDownCapture={() => {
         dragged.current = false;
       }}
       onDragStart={(_, info) => {
         start.current = { x: info.point.x, y: info.point.y };
-        onDragChange(true);
       }}
       onDrag={(_, info) => {
-        if (
-          Math.hypot(info.point.x - start.current.x, info.point.y - start.current.y) > 8
-        ) {
+        const dist = Math.hypot(
+          info.point.x - start.current.x,
+          info.point.y - start.current.y,
+        );
+        if (dist > DRAG_THRESHOLD && !dragged.current) {
           dragged.current = true;
+          clearTap();
+          onDragChange(true);
         }
       }}
       onDragEnd={(event, info) => {
+        const wasDrag = dragged.current;
         onDragChange(false);
-        const parent = (event.target as HTMLElement).closest("[data-canvas]");
-        if (parent) {
-          const rect = parent.getBoundingClientRect();
-          const x = ((info.point.x - rect.left) / rect.width) * 100;
-          const y = ((info.point.y - rect.top) / rect.height) * 100;
-          onMove(x, y);
+        if (wasDrag) {
+          const parent = (event.target as HTMLElement).closest("[data-canvas]");
+          if (parent) {
+            const rect = parent.getBoundingClientRect();
+            const nx = ((info.point.x - rect.left) / rect.width) * 100;
+            const ny = ((info.point.y - rect.top) / rect.height) * 100;
+            onMove(nx, ny);
+          }
         }
         dx.set(0);
         dy.set(0);
@@ -77,14 +94,14 @@ export function BubbleNode({
         if (dragged.current) return;
         const now = Date.now();
         if (now - lastTap.current < 280) {
-          if (tapTimer.current) window.clearTimeout(tapTimer.current);
+          clearTap();
           lastTap.current = 0;
           onOpen();
           return;
         }
         lastTap.current = now;
         tapTimer.current = window.setTimeout(() => {
-          onEdit();
+          if (!dragged.current) onEdit();
         }, 280);
       }}
       style={{
@@ -134,11 +151,12 @@ export function BubbleNode({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
+            clearTap();
             onOpen();
           }}
-          className="absolute -bottom-1 -start-1 grid h-7 w-7 place-items-center rounded-full bg-white text-slate-500 shadow-soft"
+          className="absolute -bottom-1 -start-1 grid h-8 w-8 place-items-center rounded-full bg-white text-slate-500 shadow-soft"
         >
-          <Expand size={13} />
+          <Expand size={14} />
         </button>
       </div>
     </motion.div>

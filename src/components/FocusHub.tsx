@@ -60,7 +60,7 @@ export function FocusHub() {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-24 no-scrollbar">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-3 pb-24 no-scrollbar [touch-action:pan-y]">
         {ROLE_ORDER.filter((s) => (groups.byStatus.get(s) ?? []).length > 0).map(
           (status) => (
             <GroupBlock

@@ -2,7 +2,7 @@ import { Cloud, CloudOff, Plus } from "lucide-react";
 import { useState } from "react";
 import { EditDrawer } from "./components/EditDrawer";
 import { FocusHub } from "./components/FocusHub";
-import { DotIndicator, SwipePager } from "./components/SwipePager";
+import { PageSwitcher, SwipePager } from "./components/SwipePager";
 import { WorldMap } from "./components/WorldMap";
 import { useApp } from "./state/AppProvider";
 
@@ -11,9 +11,9 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col bg-canvas">
-      <header className="flex items-center justify-between px-4 pt-[max(0.6rem,env(safe-area-inset-top))]">
-        <div>
+    <div className="flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden bg-canvas">
+      <header className="shrink-0 px-3 pb-1 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        <div className="flex items-center justify-between px-1">
           <div className="text-lg font-extrabold tracking-tight text-slate-800">
             עולמות
           </div>
@@ -22,7 +22,7 @@ export default function App() {
             {cloud ? "סנכרון בענן" : "שמירה מקומית"}
           </div>
         </div>
-        <DotIndicator page={page} count={2} onPage={setPage} />
+        <PageSwitcher page={page} onPage={setPage} />
       </header>
 
       <SwipePager page={page} onPage={setPage} locked={dragging}>

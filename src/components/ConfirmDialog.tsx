@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { X } from "lucide-react";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -34,7 +35,17 @@ export function ConfirmDialog({
             className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-soft"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-bold text-slate-800">{title}</h3>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-base font-bold text-slate-800">{title}</h3>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500"
+                aria-label="סגירה"
+              >
+                <X size={16} />
+              </button>
+            </div>
             <p className="mt-1 text-sm text-slate-500">{body}</p>
             <div className="mt-4 flex gap-2">
               <button

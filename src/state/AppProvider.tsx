@@ -79,6 +79,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     id: string;
   } | null>(null);
   const applyingRemote = useRef(false);
+  const ignoreRemoteUntil = useRef(0);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
 
@@ -108,7 +109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     })();
     return subscribeRealtime((remote) => {
-      if (applyingRemote.current) return;
+      if (applyingRemote.current || Date.now() < ignoreRemoteUntil.current) return;
       applyingRemote.current = true;
       setSnapshot((local) => mergeSnapshots(local, remote));
       queueMicrotask(() => {
@@ -118,6 +119,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const mutate = useCallback((updater: (prev: AppSnapshot) => AppSnapshot) => {
+    ignoreRemoteUntil.current = Date.now() + 900;
     setSnapshot((prev) => updater(prev));
   }, []);
 
