@@ -51,3 +51,8 @@ textarea {
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
 }
+
+.pager-panel {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}

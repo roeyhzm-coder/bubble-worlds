@@ -9,6 +9,8 @@ interface SwipePagerProps {
   children: ReactNode[];
 }
 
+const PAGE_THRESHOLD = 36;
+
 export function SwipePager({
   page,
   onPage,
@@ -19,21 +21,40 @@ export function SwipePager({
   const pageRef = useRef(page);
   const programmatic = useRef(false);
   const frame = useRef(0);
+  const gesture = useRef<{
+    startX: number;
+    startPage: number;
+    startLeft: number;
+    pointerId: number;
+  } | null>(null);
+  const maxPage = Math.max(0, children.length - 1);
   pageRef.current = page;
+
+  const clampPage = (index: number) => Math.max(0, Math.min(maxPage, index));
+
+  const neighborPage = (from: number, direction: number) =>
+    clampPage(from + (direction > 0 ? 1 : direction < 0 ? -1 : 0));
 
   const scrollToPage = (index: number, smooth: boolean) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const width = scroller.clientWidth;
     if (width <= 0) return;
+    const next = clampPage(index);
     programmatic.current = true;
     scroller.scrollTo({
-      left: index * width,
+      left: next * width,
       behavior: smooth ? "smooth" : "auto",
     });
     window.setTimeout(() => {
       programmatic.current = false;
-    }, smooth ? 420 : 80);
+    }, smooth ? 380 : 60);
+  };
+
+  const commitNeighbor = (from: number, direction: number) => {
+    const next = neighborPage(from, direction);
+    if (next !== pageRef.current) onPage(next);
+    scrollToPage(next, true);
   };
 
   useEffect(() => {
@@ -56,23 +77,48 @@ export function SwipePager({
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const panels = [...scroller.querySelectorAll<HTMLElement>("[data-pager-panel]")];
-    if (panels.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (programmatic.current) return;
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        const index = Number((visible?.target as HTMLElement | undefined)?.dataset.pagerPanel);
-        if (!Number.isFinite(index) || index === pageRef.current) return;
-        onPage(index);
-      },
-      { root: scroller, threshold: 0.55 },
-    );
-    for (const panel of panels) observer.observe(panel);
-    return () => observer.disconnect();
-  }, [children.length, onPage]);
+
+    const skip = (target: EventTarget | null) => {
+      const node = target as HTMLElement | null;
+      return Boolean(node?.closest("input, textarea, select, [contenteditable='true']"));
+    };
+
+    const onDown = (event: PointerEvent) => {
+      if (locked || event.button !== 0 || skip(event.target)) return;
+      gesture.current = {
+        startX: event.clientX,
+        startPage: pageRef.current,
+        startLeft: scroller.scrollLeft,
+        pointerId: event.pointerId,
+      };
+    };
+
+    const onUp = (event: PointerEvent) => {
+      const g = gesture.current;
+      if (!g || g.pointerId !== event.pointerId) return;
+      gesture.current = null;
+      const width = scroller.clientWidth || 1;
+      const dx = event.clientX - g.startX;
+      const dScroll = scroller.scrollLeft - g.startLeft;
+      const moved = Math.abs(dx) >= PAGE_THRESHOLD || Math.abs(dScroll) >= width * 0.12;
+      if (!moved) {
+        scrollToPage(g.startPage, true);
+        if (pageRef.current !== g.startPage) onPage(g.startPage);
+        return;
+      }
+      const direction = dScroll !== 0 ? Math.sign(dScroll) : Math.sign(-dx);
+      commitNeighbor(g.startPage, direction);
+    };
+
+    scroller.addEventListener("pointerdown", onDown, { passive: true });
+    window.addEventListener("pointerup", onUp, { passive: true });
+    window.addEventListener("pointercancel", onUp, { passive: true });
+    return () => {
+      scroller.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [locked, maxPage, onPage]);
 
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     if (programmatic.current || locked) return;
@@ -80,10 +126,13 @@ export function SwipePager({
     cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(() => {
       const width = scroller.clientWidth || 1;
-      const next = Math.max(
-        0,
-        Math.min(children.length - 1, Math.round(scroller.scrollLeft / width)),
-      );
+      const raw = Math.round(scroller.scrollLeft / width);
+      const origin = gesture.current?.startPage ?? pageRef.current;
+      if (Math.abs(raw - origin) > 1) {
+        commitNeighbor(origin, raw - origin);
+        return;
+      }
+      const next = clampPage(raw);
       if (next !== pageRef.current) onPage(next);
     });
   };
@@ -101,7 +150,7 @@ export function SwipePager({
           key={index}
           data-pager-panel={index}
           dir="rtl"
-          className="h-full w-full min-w-full shrink-0 snap-start overflow-hidden"
+          className="pager-panel h-full w-full min-w-full shrink-0 snap-start snap-always overflow-hidden"
         >
           {child}
         </div>
