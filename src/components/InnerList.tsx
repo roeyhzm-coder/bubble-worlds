@@ -64,23 +64,27 @@ export function InnerList({ items }: { items: Bubble[] }) {
           const open = openId === item.id;
           return (
             <div key={item.id} className="rounded-2xl bg-white shadow-soft">
-              <div className="flex min-h-12 items-center gap-1.5 px-2">
+              <div
+                className="flex min-h-12 items-center gap-1.5 px-2"
+                onClick={() => {
+                  if (item.is_tracking) setOpenId(open ? null : item.id);
+                }}
+              >
                 {item.is_tracking ? (
-                  <button
-                    type="button"
-                    aria-label="פתיחת מעקב"
-                    onClick={() => setOpenId(open ? null : item.id)}
+                  <span
+                    aria-hidden
                     className="grid h-10 w-8 place-items-center text-xl leading-none"
                     style={{ color: item.color }}
                   >
                     ▼
-                  </button>
+                  </span>
                 ) : (
                   <span className="w-2" />
                 )}
                 <input
                   value={item.title}
                   onChange={(e) => updateBubble(item.id, { title: e.target.value })}
+                  onClick={(e) => e.stopPropagation()}
                   onFocus={() => {
                     if (item.is_tracking) setOpenId(item.id);
                   }}
@@ -88,7 +92,8 @@ export function InnerList({ items }: { items: Bubble[] }) {
                 />
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     const next = !item.is_tracking;
                     updateBubble(item.id, { is_tracking: next });
                     setOpenId(next ? item.id : null);
@@ -104,7 +109,10 @@ export function InnerList({ items }: { items: Bubble[] }) {
                 {kids > 0 && (
                   <button
                     type="button"
-                    onClick={() => setDrill({ kind: "bubble", id: item.id })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDrill({ kind: "bubble", id: item.id });
+                    }}
                     className="grid h-10 w-9 place-items-center text-slate-400"
                     aria-label="כניסה לעולם"
                   >
@@ -113,7 +121,10 @@ export function InnerList({ items }: { items: Bubble[] }) {
                 )}
                 <button
                   type="button"
-                  onClick={() => setPendingDelete(item.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPendingDelete(item.id);
+                  }}
                   className="grid h-10 w-9 place-items-center text-rose-400"
                   aria-label="מחיקה"
                 >

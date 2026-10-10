@@ -6,7 +6,6 @@ import type { Bubble, Category } from "../types";
 interface BubbleNodeProps {
   item: Category | Bubble;
   type: "category" | "bubble";
-  boundsRef: RefObject<HTMLDivElement | null>;
   canvasRef: RefObject<HTMLDivElement | null>;
   onOpen: () => void;
   onEdit: () => void;
@@ -29,13 +28,13 @@ function clamp(n: number, min: number, max: number): number {
 export function BubbleNode({
   item,
   type,
-  boundsRef,
   canvasRef,
   onOpen,
   onEdit,
   onMove,
   onDragChange,
 }: BubbleNodeProps) {
+  const nodeRef = useRef<HTMLDivElement>(null);
   const offsetX = useMotionValue(0);
   const offsetY = useMotionValue(0);
   const start = useRef({ x: 0, y: 0 });
@@ -46,14 +45,20 @@ export function BubbleNode({
   const sizeMul = isBubble(item, type) ? item.size_multiplier || 1 : 1;
   const diameter = BASE * sizeMul;
 
+  const resetOffset = () => {
+    offsetX.set(0);
+    offsetY.set(0);
+  };
+
   return (
     <motion.div
+      ref={nodeRef}
+      data-bubble-node={item.id}
       data-no-pager-swipe
       drag
       dragMomentum={false}
       dragElastic={0}
       dragPropagation={false}
-      dragConstraints={boundsRef}
       onPointerDownCapture={() => {
         dragged.current = false;
         blockTap.current = false;
@@ -75,29 +80,28 @@ export function BubbleNode({
         const wasDrag = dragged.current;
         onDragChange(false);
         const canvas = canvasRef.current;
-        const dx = offsetX.get();
-        const dy = offsetY.get();
-        if (!wasDrag || !canvas) {
-          offsetX.set(0);
-          offsetY.set(0);
+        const node = nodeRef.current;
+        if (!wasDrag || !canvas || !node) {
+          resetOffset();
           return;
         }
-        const { width, height } = canvas.getBoundingClientRect();
-        if (width < 32 || height < 32) {
-          offsetX.set(0);
-          offsetY.set(0);
+        const c = canvas.getBoundingClientRect();
+        const b = node.getBoundingClientRect();
+        if (c.width < 32 || c.height < 32) {
+          resetOffset();
           return;
         }
         const r = diameter / 2;
-        const min = ((MARGIN + r) / width) * 100;
-        const maxX = ((width - MARGIN - r) / width) * 100;
-        const minY = ((MARGIN + r) / height) * 100;
-        const maxY = ((height - MARGIN - r) / height) * 100;
-        const nx = clamp(item.position_x + (dx / width) * 100, min, maxX);
-        const ny = clamp(item.position_y + (dy / height) * 100, minY, maxY);
-        onMove(nx, ny);
-        offsetX.set(0);
-        offsetY.set(0);
+        const minX = ((MARGIN + r) / c.width) * 100;
+        const maxX = ((c.width - MARGIN - r) / c.width) * 100;
+        const minY = ((MARGIN + r) / c.height) * 100;
+        const maxY = ((c.height - MARGIN - r) / c.height) * 100;
+        const nx = clamp(((b.left + b.width / 2 - c.left) / c.width) * 100, minX, maxX);
+        const ny = clamp(((b.top + b.height / 2 - c.top) / c.height) * 100, minY, maxY);
+        if (Number.isFinite(nx) && Number.isFinite(ny)) {
+          onMove(nx, ny);
+        }
+        resetOffset();
       }}
       onTap={() => {
         if (dragged.current || blockTap.current) return;

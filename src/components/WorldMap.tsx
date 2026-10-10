@@ -10,7 +10,6 @@ interface WorldMapProps {
 
 export function WorldMap({ onDragChange }: WorldMapProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const boundsRef = useRef<HTMLDivElement>(null);
   const {
     drill,
     setDrill,
@@ -77,11 +76,6 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
           data-canvas
           className="relative min-h-0 flex-1 overflow-hidden"
         >
-          <div
-            ref={boundsRef}
-            className="pointer-events-none absolute inset-4"
-            aria-hidden
-          />
           {visibleCategories.length === 0 && (
             <div className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-slate-400">
               אין כאן בועות עדיין. לחצו על + כדי ליצור בועה.
@@ -94,7 +88,6 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
               item={cat}
               type="category"
               canvasRef={canvasRef}
-              boundsRef={boundsRef}
               onOpen={() => setDrill({ kind: "category", id: cat.id })}
               onEdit={() => openEditor({ type: "category", id: cat.id })}
               onMove={(x, y) => moveNode("category", cat.id, x, y)}
