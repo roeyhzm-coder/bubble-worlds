@@ -1,3 +1,11 @@
+export const BW_TABLES = {
+  categories: "bw_categories",
+  bubbles: "bw_bubbles",
+  settings: "bw_app_settings",
+} as const;
+
+export type BwTableName = (typeof BW_TABLES)[keyof typeof BW_TABLES];
+
 export type BubbleStatus =
   | "active_tracking"
   | "focus"

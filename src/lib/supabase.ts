@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { AppSnapshot, Bubble, Category, ColorRoles } from "../types";
+import { BW_TABLES, type AppSnapshot, type Bubble, type Category, type ColorRoles } from "../types";
 import { DEFAULT_COLOR_ROLES } from "./defaults";
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -28,9 +28,9 @@ function asRoles(value: unknown): ColorRoles {
 export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
   if (!supabase) return null;
   const [cats, bubs, settings] = await Promise.all([
-    supabase.from("categories").select("*"),
-    supabase.from("bubbles").select("*"),
-    supabase.from("app_settings").select("*").eq("key", "color_roles").maybeSingle(),
+    supabase.from(BW_TABLES.categories).select("*"),
+    supabase.from(BW_TABLES.bubbles).select("*"),
+    supabase.from(BW_TABLES.settings).select("*").eq("key", "color_roles").maybeSingle(),
   ]);
   if (cats.error || bubs.error) {
     console.warn("Supabase fetch failed, using local fallback", cats.error ?? bubs.error);
@@ -48,29 +48,29 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
 
 export async function upsertCategory(category: Category): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.from("categories").upsert(category);
+  const { error } = await supabase.from(BW_TABLES.categories).upsert(category);
   if (error) console.warn("upsert category", error.message);
 }
 
 export async function upsertBubble(bubble: Bubble): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.from("bubbles").upsert(bubble);
+  const { error } = await supabase.from(BW_TABLES.bubbles).upsert(bubble);
   if (error) console.warn("upsert bubble", error.message);
 }
 
 export async function deleteCategoryRemote(id: string): Promise<void> {
   if (!supabase) return;
-  await supabase.from("categories").delete().eq("id", id);
+  await supabase.from(BW_TABLES.categories).delete().eq("id", id);
 }
 
 export async function deleteBubbleRemote(id: string): Promise<void> {
   if (!supabase) return;
-  await supabase.from("bubbles").delete().eq("id", id);
+  await supabase.from(BW_TABLES.bubbles).delete().eq("id", id);
 }
 
 export async function upsertColorRoles(colorRoles: ColorRoles): Promise<void> {
   if (!supabase) return;
-  await supabase.from("app_settings").upsert({
+  await supabase.from(BW_TABLES.settings).upsert({
     key: "color_roles",
     value: colorRoles,
   });
@@ -82,21 +82,33 @@ export function subscribeRealtime(onChange: RemoteChangeHandler): () => void {
   if (!supabase) return () => undefined;
   const channel = supabase
     .channel("bubble-worlds-sync")
-    .on("postgres_changes", { event: "*", schema: "public", table: "categories" }, () => {
-      void fetchRemoteSnapshot().then((snap) => {
-        if (snap) onChange(snap);
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "bubbles" }, () => {
-      void fetchRemoteSnapshot().then((snap) => {
-        if (snap) onChange(snap);
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => {
-      void fetchRemoteSnapshot().then((snap) => {
-        if (snap) onChange(snap);
-      });
-    })
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: BW_TABLES.categories },
+      () => {
+        void fetchRemoteSnapshot().then((snap) => {
+          if (snap) onChange(snap);
+        });
+      },
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: BW_TABLES.bubbles },
+      () => {
+        void fetchRemoteSnapshot().then((snap) => {
+          if (snap) onChange(snap);
+        });
+      },
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: BW_TABLES.settings },
+      () => {
+        void fetchRemoteSnapshot().then((snap) => {
+          if (snap) onChange(snap);
+        });
+      },
+    )
     .subscribe();
 
   return () => {

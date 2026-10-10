@@ -1,9 +1,9 @@
--- עולמות — סכמת מסד נתונים ל-Supabase
--- הרצה ב-SQL Editor או: supabase db execute -f scripts/init-db.sql
+-- עולמות — סכמת מסד נתונים מבודדת (קידומת bw_)
+-- בטוח להרצה בפרויקט Supabase משותף: לא נוגע בטבלאות של אפליקציות אחרות.
 
 create extension if not exists pgcrypto;
 
-create table if not exists public.categories (
+create table if not exists public.bw_categories (
   id text primary key,
   name text not null,
   color text not null default '#818cf8',
@@ -13,10 +13,10 @@ create table if not exists public.categories (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.bubbles (
+create table if not exists public.bw_bubbles (
   id text primary key,
-  parent_bubble_id text references public.bubbles (id) on delete cascade,
-  category_id text not null references public.categories (id) on delete cascade,
+  parent_bubble_id text references public.bw_bubbles (id) on delete cascade,
+  category_id text not null references public.bw_categories (id) on delete cascade,
   title text not null,
   notes text not null default '',
   color text not null default '#94a3b8',
@@ -34,42 +34,42 @@ create table if not exists public.bubbles (
     check (streak_mode in ('strict', 'flexible', 'cumulative'))
 );
 
-create table if not exists public.app_settings (
+create table if not exists public.bw_app_settings (
   key text primary key,
   value jsonb not null
 );
 
-create index if not exists bubbles_category_idx on public.bubbles (category_id);
-create index if not exists bubbles_parent_idx on public.bubbles (parent_bubble_id);
+create index if not exists bw_bubbles_category_idx on public.bw_bubbles (category_id);
+create index if not exists bw_bubbles_parent_idx on public.bw_bubbles (parent_bubble_id);
 
-alter table public.categories enable row level security;
-alter table public.bubbles enable row level security;
-alter table public.app_settings enable row level security;
+alter table public.bw_categories enable row level security;
+alter table public.bw_bubbles enable row level security;
+alter table public.bw_app_settings enable row level security;
 
-drop policy if exists categories_all on public.categories;
-create policy categories_all on public.categories
+drop policy if exists bw_categories_all on public.bw_categories;
+create policy bw_categories_all on public.bw_categories
   for all using (true) with check (true);
 
-drop policy if exists bubbles_all on public.bubbles;
-create policy bubbles_all on public.bubbles
+drop policy if exists bw_bubbles_all on public.bw_bubbles;
+create policy bw_bubbles_all on public.bw_bubbles
   for all using (true) with check (true);
 
-drop policy if exists app_settings_all on public.app_settings;
-create policy app_settings_all on public.app_settings
+drop policy if exists bw_app_settings_all on public.bw_app_settings;
+create policy bw_app_settings_all on public.bw_app_settings
   for all using (true) with check (true);
 
 do $$
 begin
   begin
-    alter publication supabase_realtime add table public.categories;
+    alter publication supabase_realtime add table public.bw_categories;
   exception when duplicate_object then null;
   end;
   begin
-    alter publication supabase_realtime add table public.bubbles;
+    alter publication supabase_realtime add table public.bw_bubbles;
   exception when duplicate_object then null;
   end;
   begin
-    alter publication supabase_realtime add table public.app_settings;
+    alter publication supabase_realtime add table public.bw_app_settings;
   exception when duplicate_object then null;
   end;
 end $$;

@@ -11,7 +11,7 @@ npm run dev
 
 ## Supabase
 
-1. הריצו את `scripts/init-db.sql` ב-SQL Editor.
+1. הריצו את `scripts/init-db.sql` ב-SQL Editor. הסקריפט יוצר רק את `bw_categories`, `bw_bubbles` ו-`bw_app_settings` ולא נוגע בטבלאות של אפליקציות אחרות.
 2. העתיקו `.env.example` ל-`.env` ומלאו:
 
 ```
