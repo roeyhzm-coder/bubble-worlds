@@ -30,11 +30,13 @@ import type {
   BubbleStatus,
   Category,
   ColorRoles,
+  DailyTask,
   DrillNode,
   PageLabels,
   TriangleType,
   WorldKind,
 } from "../types";
+import { applyDailyRollover, emptyDailyTask, ensureTodaySlots, todayTasks } from "../lib/daily";
 
 interface AppContextValue {
   snapshot: AppSnapshot;
@@ -87,6 +89,10 @@ interface AppContextValue {
   updateTriangleType: (id: string, patch: Partial<TriangleType>) => void;
   deleteTriangleType: (id: string) => void;
   moveTriangleType: (id: string, direction: -1 | 1) => void;
+  addDailyTask: () => string;
+  updateDailyTask: (id: string, patch: Partial<DailyTask>) => void;
+  deleteDailyTask: (id: string) => void;
+  toggleDailyTask: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -132,6 +138,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         void upsertSetting("page_labels", merged.pageLabels);
         void upsertSetting("list_views", merged.listViews);
         void upsertSetting("triangle_types", merged.triangleTypes);
+        void upsertSetting("daily_tasks", merged.dailyTasks);
         return merged;
       });
       queueMicrotask(() => {
@@ -536,6 +543,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [mutate, persistTriangles],
   );
 
+  const persistDaily = useCallback((dailyTasks: DailyTask[]) => {
+    const next = applyDailyRollover(dailyTasks);
+    void upsertSetting("daily_tasks", next);
+    return next;
+  }, []);
+
+  const addDailyTask = useCallback(() => {
+    const today = todayKey();
+    const id = emptyDailyTask(today, 0).id;
+    mutate((prev) => {
+      const order_index = todayTasks(prev.dailyTasks, today).length;
+      const dailyTasks = persistDaily([
+        ...prev.dailyTasks,
+        { ...emptyDailyTask(today, order_index), id },
+      ]);
+      return { ...prev, dailyTasks };
+    });
+    return id;
+  }, [mutate, persistDaily]);
+
+  const updateDailyTask = useCallback(
+    (id: string, patch: Partial<DailyTask>) => {
+      mutate((prev) => {
+        const dailyTasks = persistDaily(
+          prev.dailyTasks.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+        );
+        return { ...prev, dailyTasks };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
+  const deleteDailyTask = useCallback(
+    (id: string) => {
+      mutate((prev) => {
+        const dailyTasks = persistDaily(ensureTodaySlots(prev.dailyTasks.filter((item) => item.id !== id)));
+        return { ...prev, dailyTasks };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
+  const toggleDailyTask = useCallback(
+    (id: string) => {
+      mutate((prev) => {
+        const dailyTasks = persistDaily(
+          prev.dailyTasks.map((item) =>
+            item.id === id ? { ...item, completed: !item.completed } : item,
+          ),
+        );
+        return { ...prev, dailyTasks };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
   const moveTriangleType = useCallback(
     (id: string, direction: -1 | 1) => {
       mutate((prev) => {
@@ -684,8 +747,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateTriangleType,
       deleteTriangleType,
       moveTriangleType,
+      addDailyTask,
+      updateDailyTask,
+      deleteDailyTask,
+      toggleDailyTask,
     }),
     [
+      addDailyTask,
       addListItem,
       addTriangleType,
       applyStatusColor,
@@ -697,6 +765,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currentWorldKind,
       deleteBubble,
       deleteCategory,
+      deleteDailyTask,
       deleteTriangleType,
       drill,
       drillKey,
@@ -711,7 +780,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       resetTracking,
       setPageLabels,
       setTriangleType,
+      toggleDailyTask,
       snapshot,
+      updateDailyTask,
       updateTriangleType,
       unmarkToday,
       updateBubble,

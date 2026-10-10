@@ -53,6 +53,15 @@ create table if not exists public.bw_app_settings (
   value jsonb not null
 );
 
+create table if not exists public.bw_daily_tasks (
+  id text primary key,
+  text text not null default '',
+  completed boolean not null default false,
+  date text not null,
+  rollover_count integer not null default 0,
+  order_index integer not null default 0
+);
+
 create index if not exists bw_bubbles_category_idx on public.bw_bubbles (category_id);
 create index if not exists bw_bubbles_parent_idx on public.bw_bubbles (parent_bubble_id);
 

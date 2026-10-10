@@ -1,5 +1,6 @@
 import { Cloud, CloudOff, Plus } from "lucide-react";
 import { useState } from "react";
+import { DailyTasks } from "./components/DailyTasks";
 import { EditDrawer } from "./components/EditDrawer";
 import { FocusHub } from "./components/FocusHub";
 import { PageSwitcher, SwipePager } from "./components/SwipePager";
@@ -8,7 +9,7 @@ import { WorldMap } from "./components/WorldMap";
 import { useApp } from "./state/AppProvider";
 
 export default function App() {
-  const { page, setPage, cloud, requestCreate, addTriangleType } = useApp();
+  const { page, setPage, cloud, requestCreate, addTriangleType, addDailyTask } = useApp();
   const [dragging, setDragging] = useState(false);
 
   return (
@@ -29,13 +30,18 @@ export default function App() {
       <SwipePager page={page} onPage={setPage} locked={dragging}>
         <WorldMap onDragChange={setDragging} />
         <FocusHub />
+        <DailyTasks />
         <TriangleStudio />
       </SwipePager>
 
       {page !== 1 && (
         <button
           type="button"
-          onClick={() => (page === 2 ? addTriangleType() : requestCreate())}
+          onClick={() => {
+            if (page === 2) addDailyTask();
+            else if (page === 3) addTriangleType();
+            else requestCreate();
+          }}
           className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-slate-900 text-white shadow-bubble"
           aria-label="הוספה"
         >

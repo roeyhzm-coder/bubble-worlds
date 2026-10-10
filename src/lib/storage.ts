@@ -1,4 +1,5 @@
 import type { AppSnapshot } from "../types";
+import { mergeDailyTasks } from "./daily";
 import { EMPTY_SNAPSHOT, STORAGE_KEY, mergeSeed } from "./defaults";
 
 export function loadLocal(): AppSnapshot {
@@ -13,6 +14,7 @@ export function loadLocal(): AppSnapshot {
       pageLabels: parsed.pageLabels ?? EMPTY_SNAPSHOT.pageLabels,
       listViews: parsed.listViews ?? {},
       triangleTypes: Array.isArray(parsed.triangleTypes) ? parsed.triangleTypes : [],
+      dailyTasks: Array.isArray(parsed.dailyTasks) ? parsed.dailyTasks : [],
     });
   } catch {
     return mergeSeed(EMPTY_SNAPSHOT);
@@ -68,5 +70,6 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
     pageLabels: { ...local.pageLabels, ...remote.pageLabels },
     listViews: { ...local.listViews, ...remote.listViews },
     triangleTypes: [...types.values()],
+    dailyTasks: mergeDailyTasks(local.dailyTasks ?? [], remote.dailyTasks ?? []),
   });
 }

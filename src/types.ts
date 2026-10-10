@@ -73,7 +73,17 @@ export type ColorRoles = Record<BubbleStatus, string>;
 export interface PageLabels {
   map: string;
   hub: string;
+  daily: string;
   studio: string;
+}
+
+export interface DailyTask {
+  id: string;
+  text: string;
+  completed: boolean;
+  date: string;
+  rollover_count: number;
+  order_index: number;
 }
 
 export interface AppSnapshot {
@@ -83,6 +93,7 @@ export interface AppSnapshot {
   pageLabels: PageLabels;
   listViews: Record<string, boolean>;
   triangleTypes: TriangleType[];
+  dailyTasks: DailyTask[];
 }
 
 export type DrillNode =

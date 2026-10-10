@@ -15,8 +15,10 @@ export function SwipePager({
   locked = false,
   children,
 }: SwipePagerProps) {
-  const activeTab = Math.max(0, Math.min(2, page));
+  const last = Math.max(0, children.length - 1);
+  const activeTab = Math.max(0, Math.min(last, page));
   const start = useRef<{ x: number; y: number } | null>(null);
+  const count = Math.max(children.length, 1);
 
   const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     if (locked) return;
@@ -37,7 +39,7 @@ export function SwipePager({
     const deltaY = origin.y - touch.clientY;
     if (Math.abs(deltaY) > Math.abs(deltaX)) return;
     if (Math.abs(deltaX) <= 45) return;
-    if (deltaX > 45 && activeTab < 2) onPage(activeTab + 1);
+    if (deltaX > 45 && activeTab < last) onPage(activeTab + 1);
     if (deltaX < -45 && activeTab > 0) onPage(activeTab - 1);
   };
 
@@ -53,14 +55,18 @@ export function SwipePager({
       }}
     >
       <div
-        className="flex h-full w-[300%]"
+        className="flex h-full w-[400%]"
         style={{
-          transform: `translateX(-${(activeTab * 100) / 3}%)`,
+          transform: `translateX(-${(activeTab * 100) / count}%)`,
           transition: "transform 280ms cubic-bezier(0.4, 0, 0.2, 1)",
         }}
       >
         {children.map((child, index) => (
-          <div key={index} dir="rtl" className="h-full w-1/3 min-w-0 overflow-hidden">
+          <div
+            key={index}
+            dir="rtl"
+            className="h-full w-1/4 min-w-[100vw] shrink-0 overflow-hidden"
+          >
             {child}
           </div>
         ))}
@@ -82,7 +88,8 @@ export function PageSwitcher({
   const tabs = [
     { id: 0, emoji: "🌐", key: "map" as const, value: labels.map },
     { id: 1, emoji: "🎯", key: "hub" as const, value: labels.hub },
-    { id: 2, emoji: "⚙️", key: "studio" as const, value: labels.studio },
+    { id: 2, emoji: "✅", key: "daily" as const, value: labels.daily },
+    { id: 3, emoji: "⚙️", key: "studio" as const, value: labels.studio },
   ];
 
   return (
@@ -97,7 +104,7 @@ export function PageSwitcher({
               key={tab.id}
               value={tab.value}
               onChange={(e) => setPageLabels({ [tab.key]: e.target.value })}
-              className="h-9 min-w-0 flex-1 rounded-xl bg-slate-50 px-1 text-center text-[11px] font-extrabold text-slate-800 outline-none"
+              className="h-9 min-w-0 flex-1 rounded-xl bg-slate-50 px-0.5 text-center text-[10px] font-extrabold text-slate-800 outline-none"
               aria-label={`שם לשונית ${tab.emoji}`}
             />
           ) : (
@@ -105,7 +112,7 @@ export function PageSwitcher({
               key={tab.id}
               type="button"
               onClick={() => onPage(tab.id)}
-              className={`h-9 min-w-0 flex-1 truncate rounded-xl px-1 text-[11px] font-extrabold transition ${
+              className={`h-9 min-w-0 flex-1 truncate rounded-xl px-0.5 text-[10px] font-extrabold transition ${
                 page === tab.id ? "bg-slate-900 text-white" : "text-slate-500"
               }`}
             >

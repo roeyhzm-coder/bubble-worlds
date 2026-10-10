@@ -1,0 +1,120 @@
+import { Plus, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { archivedTasks, bangs, todayTasks } from "../lib/daily";
+import { todayKey } from "../lib/defaults";
+import { useApp } from "../state/AppProvider";
+
+export function DailyTasks() {
+  const {
+    snapshot,
+    addDailyTask,
+    updateDailyTask,
+    deleteDailyTask,
+    toggleDailyTask,
+  } = useApp();
+  const [showArchive, setShowArchive] = useState(false);
+  const today = todayKey();
+  const items = useMemo(() => todayTasks(snapshot.dailyTasks, today), [snapshot.dailyTasks, today]);
+  const archive = useMemo(
+    () => archivedTasks(snapshot.dailyTasks, today),
+    [snapshot.dailyTasks, today],
+  );
+  const done = items.filter((item) => item.completed && item.text.trim()).length;
+  const total = items.filter((item) => item.text.trim()).length;
+
+  return (
+    <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
+      <div className="px-3 pb-2">
+        <div className="text-[15px] font-extrabold text-slate-800">
+          {snapshot.pageLabels.daily}
+        </div>
+        <div className="text-[11px] font-bold text-slate-400">
+          {done}/{total || 6} הושלמו · משימות שלא נסגרו גולשות למחר
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 pb-24 no-scrollbar">
+        {items.map((item, index) => {
+          const marks = bangs(item.rollover_count);
+          return (
+            <div
+              key={item.id}
+              className={`flex min-h-12 items-center gap-1.5 rounded-2xl bg-white px-2 shadow-soft ${
+                item.completed ? "opacity-55" : ""
+              }`}
+            >
+              <span className="w-5 shrink-0 text-center text-[12px] font-extrabold text-slate-400">
+                {index + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => toggleDailyTask(item.id)}
+                className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${
+                  item.completed ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400"
+                }`}
+                aria-label={item.completed ? "בטל סימון" : "סמן כהושלם"}
+              >
+                V
+              </button>
+              {marks && (
+                <span className="shrink-0 text-[15px] font-black leading-none text-rose-500">
+                  {marks}
+                </span>
+              )}
+              <input
+                value={item.text}
+                onChange={(e) => updateDailyTask(item.id, { text: e.target.value })}
+                placeholder="משימה להיום…"
+                className={`h-11 min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-slate-800 outline-none ${
+                  item.completed ? "line-through" : ""
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => deleteDailyTask(item.id)}
+                className="grid h-10 w-9 shrink-0 place-items-center text-rose-400"
+                aria-label="מחיקה"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={addDailyTask}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white text-sm font-extrabold text-slate-700 shadow-soft"
+        >
+          <Plus size={16} />
+          הוסף משימה
+        </button>
+
+        {archive.length > 0 && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setShowArchive((v) => !v)}
+              className="h-8 text-[11px] font-extrabold text-slate-400"
+            >
+              {showArchive ? "הסתר היסטוריה" : `היסטוריה (${archive.length})`}
+            </button>
+            {showArchive && (
+              <div className="space-y-1.5">
+                {archive.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex min-h-10 items-center gap-2 rounded-xl bg-white/70 px-3 text-[13px] text-slate-500"
+                  >
+                    <span className="text-[11px] font-bold">{item.date.slice(5)}</span>
+                    <span className="min-w-0 flex-1 truncate line-through">{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

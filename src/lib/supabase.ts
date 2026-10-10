@@ -8,6 +8,7 @@ import {
   type PageLabels,
   type WorldKind,
 } from "../types";
+import { applyDailyRollover, asDailyTasks } from "./daily";
 import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
 import { asActionSteps, asTriangleTypes } from "./triangles";
 
@@ -39,6 +40,7 @@ function asPageLabels(value: unknown): PageLabels {
   return {
     map: rec.map?.trim() || DEFAULT_PAGE_LABELS.map,
     hub: rec.hub?.trim() || DEFAULT_PAGE_LABELS.hub,
+    daily: rec.daily?.trim() || DEFAULT_PAGE_LABELS.daily,
     studio: rec.studio?.trim() || DEFAULT_PAGE_LABELS.studio,
   };
 }
@@ -92,6 +94,7 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     pageLabels: asPageLabels(map.page_labels),
     listViews: asListViews(map.list_views),
     triangleTypes: asTriangleTypes(map.triangle_types),
+    dailyTasks: applyDailyRollover(asDailyTasks(map.daily_tasks)),
   };
 }
 
