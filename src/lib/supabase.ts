@@ -9,6 +9,7 @@ import {
   type WorldKind,
 } from "../types";
 import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
+import { asActionSteps, asTriangleTypes } from "./triangles";
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -38,6 +39,7 @@ function asPageLabels(value: unknown): PageLabels {
   return {
     map: rec.map?.trim() || DEFAULT_PAGE_LABELS.map,
     hub: rec.hub?.trim() || DEFAULT_PAGE_LABELS.hub,
+    studio: rec.studio?.trim() || DEFAULT_PAGE_LABELS.studio,
   };
 }
 
@@ -59,6 +61,11 @@ function normalizeBubble(row: RemoteBubble): Bubble {
     ...row,
     tracking_history: asHistory(row.tracking_history),
     container_type: asWorldKind(row.container_type),
+    triangle_id: typeof row.triangle_id === "string" ? row.triangle_id : null,
+    due_at: typeof row.due_at === "string" ? row.due_at : null,
+    due_label: typeof row.due_label === "string" ? row.due_label : "",
+    action_done: Boolean(row.action_done),
+    action_steps: asActionSteps(row.action_steps),
   };
 }
 
@@ -82,6 +89,7 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     colorRoles: asRoles(map.color_roles),
     pageLabels: asPageLabels(map.page_labels),
     listViews: asListViews(map.list_views),
+    triangleTypes: asTriangleTypes(map.triangle_types),
   };
 }
 

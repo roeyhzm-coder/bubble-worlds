@@ -12,6 +12,7 @@ export function loadLocal(): AppSnapshot {
       colorRoles: parsed.colorRoles ?? EMPTY_SNAPSHOT.colorRoles,
       pageLabels: parsed.pageLabels ?? EMPTY_SNAPSHOT.pageLabels,
       listViews: parsed.listViews ?? {},
+      triangleTypes: parsed.triangleTypes ?? [],
     });
   } catch {
     return mergeSeed(EMPTY_SNAPSHOT);
@@ -47,13 +48,22 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
     bubs.set(bub.id, {
       ...keep,
       container_type: keep.container_type ?? prev?.container_type ?? null,
+      triangle_id: keep.triangle_id ?? prev?.triangle_id ?? null,
+      due_at: keep.due_at ?? prev?.due_at ?? null,
+      due_label: keep.due_label || prev?.due_label || "",
+      action_done: keep.action_done || Boolean(prev?.action_done),
+      action_steps:
+        keep.action_steps?.length ? keep.action_steps : prev?.action_steps ?? [],
     });
   }
+  const types = new Map(local.triangleTypes.map((item) => [item.id, item]));
+  for (const type of remote.triangleTypes) types.set(type.id, type);
   return mergeSeed({
     categories: [...cats.values()],
     bubbles: [...bubs.values()],
     colorRoles: { ...local.colorRoles, ...remote.colorRoles },
     pageLabels: { ...local.pageLabels, ...remote.pageLabels },
     listViews: { ...local.listViews, ...remote.listViews },
+    triangleTypes: [...types.values()],
   });
 }

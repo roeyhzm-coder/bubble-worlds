@@ -1,4 +1,13 @@
-import type { AppSnapshot, Bubble, Category, ColorRoles, PageLabels, WorldKind } from "../types";
+import type { ActionStep, AppSnapshot, Bubble, Category, ColorRoles, PageLabels, WorldKind } from "../types";
+import { TRI_TRACK, inferTriangleId, mergeTriangleTypes } from "./triangles";
+
+export const EMPTY_ITEM_TOOLS = {
+  triangle_id: TRI_TRACK as string | null,
+  due_at: null as string | null,
+  due_label: "",
+  action_done: false,
+  action_steps: [] as ActionStep[],
+};
 
 export const STORAGE_KEY = "bubble-worlds-v1";
 
@@ -94,6 +103,11 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     tracking_history: [],
     streak_mode: "flexible",
     container_type: null,
+    triangle_id: "tri-track",
+    due_at: null,
+    due_label: "",
+    action_done: false,
+    action_steps: [],
   },
   {
     id: "bub-read",
@@ -113,6 +127,11 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     tracking_history: [],
     streak_mode: "flexible",
     container_type: null,
+    triangle_id: "tri-action",
+    due_at: null,
+    due_label: "",
+    action_done: false,
+    action_steps: [],
   },
   {
     id: "bub-japan",
@@ -132,6 +151,11 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     tracking_history: [],
     streak_mode: "cumulative",
     container_type: null,
+    triangle_id: "tri-thought",
+    due_at: null,
+    due_label: "",
+    action_done: false,
+    action_steps: [],
   },
   {
     id: "bub-portfolio",
@@ -151,6 +175,11 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     tracking_history: [],
     streak_mode: "flexible",
     container_type: null,
+    triangle_id: "tri-action",
+    due_at: null,
+    due_label: "",
+    action_done: false,
+    action_steps: [],
   },
   {
     id: "bub-walk",
@@ -170,6 +199,11 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     tracking_history: [],
     streak_mode: "flexible",
     container_type: null,
+    triangle_id: "tri-track",
+    due_at: null,
+    due_label: "",
+    action_done: false,
+    action_steps: [],
   },
   {
     id: "bub-sleep",
@@ -189,12 +223,18 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     tracking_history: [],
     streak_mode: "strict",
     container_type: null,
+    triangle_id: "tri-track",
+    due_at: null,
+    due_label: "",
+    action_done: false,
+    action_steps: [],
   },
 ];
 
 export const DEFAULT_PAGE_LABELS: PageLabels = {
-  map: "מפת עולמות",
+  map: "עולמות",
   hub: "מוקדי פוקוס",
+  studio: "ניהול משולשים",
 };
 
 export const EMPTY_SNAPSHOT: AppSnapshot = {
@@ -203,6 +243,7 @@ export const EMPTY_SNAPSHOT: AppSnapshot = {
   colorRoles: { ...DEFAULT_COLOR_ROLES },
   pageLabels: { ...DEFAULT_PAGE_LABELS },
   listViews: {},
+  triangleTypes: [],
 };
 
 function restoreSeedPosition<T extends { id: string; position_x: number; position_y: number }>(
@@ -243,15 +284,22 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
     }),
     bubbles: bubbles.map((bubble) => {
       const hasChildren = bubbles.some((child) => child.parent_bubble_id === bubble.id);
+      const triangle_id = inferTriangleId(bubble);
       return {
         ...bubble,
         container_type:
           asWorldKind(bubble.container_type) ?? (hasChildren ? "bubbles" : null),
+        triangle_id,
+        due_at: bubble.due_at ?? null,
+        due_label: bubble.due_label ?? "",
+        action_done: Boolean(bubble.action_done),
+        action_steps: bubble.action_steps ?? [],
       };
     }),
     colorRoles: { ...DEFAULT_COLOR_ROLES, ...snapshot.colorRoles },
     pageLabels: { ...DEFAULT_PAGE_LABELS, ...snapshot.pageLabels },
     listViews: { ...snapshot.listViews },
+    triangleTypes: mergeTriangleTypes(snapshot.triangleTypes ?? []),
   };
 }
 

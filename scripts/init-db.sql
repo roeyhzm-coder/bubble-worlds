@@ -42,6 +42,11 @@ alter table public.bw_categories add column if not exists container_type text
   check (container_type is null or container_type in ('bubbles', 'list'));
 alter table public.bw_bubbles add column if not exists container_type text
   check (container_type is null or container_type in ('bubbles', 'list'));
+alter table public.bw_bubbles add column if not exists triangle_id text;
+alter table public.bw_bubbles add column if not exists due_at text;
+alter table public.bw_bubbles add column if not exists due_label text not null default '';
+alter table public.bw_bubbles add column if not exists action_done boolean not null default false;
+alter table public.bw_bubbles add column if not exists action_steps jsonb not null default '[]'::jsonb;
 
 create table if not exists public.bw_app_settings (
   key text primary key,

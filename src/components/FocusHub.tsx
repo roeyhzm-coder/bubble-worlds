@@ -1,177 +1,173 @@
-import { Palette } from "lucide-react";
+import { X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { statusLabel, trackingProgress } from "../lib/tracking";
+import { dueText, findTriangle } from "../lib/triangles";
+import { trackingProgress } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
-import type { Bubble, BubbleStatus } from "../types";
-import { ColorSettingsModal } from "./ColorSettingsModal";
+import type { Bubble, TriangleType } from "../types";
+import { TypeTools } from "./ItemTools";
 import { ProgressRing } from "./ProgressRing";
 
-const ROLE_ORDER: BubbleStatus[] = [
-  "active_tracking",
-  "focus",
-  "deep_thought",
-  "default",
-];
-
 export function FocusHub() {
-  const { snapshot, childrenOf, setPage, setDrill } = useApp();
-  const [colorsOpen, setColorsOpen] = useState(false);
-
-  const leaves = useMemo(
-    () => snapshot.bubbles.filter((b) => childrenOf(b.id).length === 0),
-    [childrenOf, snapshot.bubbles],
-  );
+  const { snapshot, setPage, setDrill } = useApp();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [notesId, setNotesId] = useState<string | null>(null);
 
   const groups = useMemo(() => {
-    const byStatus = new Map<BubbleStatus, Bubble[]>();
-    for (const status of ROLE_ORDER) byStatus.set(status, []);
-    const extra = new Map<string, Bubble[]>();
-    for (const bubble of leaves) {
-      if (bubble.status !== "default" || bubble.is_tracking) {
-        const key = bubble.is_tracking ? "active_tracking" : bubble.status;
-        byStatus.get(key)?.push(bubble);
-      } else {
-        const list = extra.get(bubble.color) ?? [];
-        list.push(bubble);
-        extra.set(bubble.color, list);
-      }
-    }
-    return { byStatus, extra };
-  }, [leaves]);
+    return snapshot.triangleTypes
+      .slice()
+      .sort((a, b) => a.order_index - b.order_index)
+      .map((type) => ({
+        type,
+        items: snapshot.bubbles.filter((item) => item.triangle_id === type.id),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [snapshot.bubbles, snapshot.triangleTypes]);
+
+  const notesItem = snapshot.bubbles.find((item) => item.id === notesId) ?? null;
 
   return (
     <section className="flex h-full flex-col">
-      <div className="flex h-12 items-center justify-between px-3">
-        <div>
-          <div className="text-[15px] font-extrabold text-slate-800">
-            מוקדי פוקוס
-          </div>
-          <div className="text-[11px] text-slate-400">
-            כל בועות הקצה הפעילות
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setColorsOpen(true)}
-          className="inline-flex h-9 items-center gap-1 rounded-xl bg-white px-2.5 text-sm font-semibold text-slate-600 shadow-soft"
-        >
-          <Palette size={15} />
-          צבעים
-        </button>
+      <div className="px-3 pb-1">
+        <div className="text-[15px] font-extrabold text-slate-800">מוקדי פוקוס</div>
+        <div className="text-[11px] text-slate-400">כל הפריטים לפי סוג משולש, מסונכרנים בזמן אמת</div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-3 pb-24 no-scrollbar [touch-action:pan-y]">
-        {ROLE_ORDER.filter((s) => (groups.byStatus.get(s) ?? []).length > 0).map(
-          (status) => (
-            <GroupBlock
-              key={status}
-              title={statusLabel(status)}
-              color={snapshot.colorRoles[status]}
-              items={groups.byStatus.get(status) ?? []}
-              onOpen={(b) => {
-                setDrill(
-                  b.parent_bubble_id
-                    ? { kind: "bubble", id: b.parent_bubble_id }
-                    : { kind: "category", id: b.category_id },
+        {groups.map(({ type, items }) => (
+          <section key={type.id} className="rounded-2xl bg-white/80 p-2.5 shadow-soft">
+            <div className="mb-2 flex h-8 items-center gap-2 px-1">
+              <span className="text-base leading-none" style={{ color: type.color }}>
+                ▼
+              </span>
+              <span className="text-xs font-extrabold text-slate-700">{type.name}</span>
+              <span className="text-[11px] text-slate-400">{items.length}</span>
+            </div>
+            <div className="space-y-2">
+              {items.map((item) => {
+                const open = openId === item.id;
+                return (
+                  <HubCard
+                    key={item.id}
+                    item={item}
+                    type={type}
+                    open={open}
+                    onToggle={() => {
+                      if (type.template === "thought") {
+                        setNotesId(item.id);
+                        return;
+                      }
+                      setOpenId(open ? null : item.id);
+                    }}
+                    onSource={() => {
+                      setDrill(
+                        item.parent_bubble_id
+                          ? { kind: "bubble", id: item.parent_bubble_id }
+                          : { kind: "category", id: item.category_id },
+                      );
+                      setPage(0);
+                    }}
+                  />
                 );
-                setPage(0);
-              }}
-              onEnter={(b) => {
-                setDrill({ kind: "bubble", id: b.id });
-                setPage(0);
-              }}
-            />
-          ),
-        )}
-
-        {[...groups.extra.entries()].map(([color, items]) => (
-          <GroupBlock
-            key={color}
-            title="קבוצת צבע"
-            color={color}
-            items={items}
-            onOpen={(b) => {
-              setDrill(
-                b.parent_bubble_id
-                  ? { kind: "bubble", id: b.parent_bubble_id }
-                  : { kind: "category", id: b.category_id },
-              );
-              setPage(0);
-            }}
-            onEnter={(b) => {
-              setDrill({ kind: "bubble", id: b.id });
-              setPage(0);
-            }}
-          />
+              })}
+            </div>
+          </section>
         ))}
 
-        {leaves.filter((b) => b.status !== "default" || b.is_tracking).length ===
-          0 &&
-          groups.extra.size === 0 && (
-            <div className="grid h-40 place-items-center text-sm text-slate-400">
-              אין עדיין מוקדים פעילים. הגדירו סטטוס או מעקב בבועה.
-            </div>
-          )}
+        {groups.length === 0 && (
+          <div className="grid h-40 place-items-center text-sm text-slate-400">
+            אין עדיין פריטים עם משולש. צרו פריט ברשימה או שייכו סוג בעמוד הניהול.
+          </div>
+        )}
       </div>
 
-      <ColorSettingsModal open={colorsOpen} onClose={() => setColorsOpen(false)} />
+      {notesItem && (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-900/30" onClick={() => setNotesId(null)}>
+          <div
+            className="flex max-h-[88dvh] w-full flex-col rounded-t-3xl bg-white px-4 pb-6 pt-3 shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-extrabold text-slate-800">{notesItem.title}</div>
+                <div className="text-[11px] font-bold text-slate-400">
+                  {findTriangle(snapshot.triangleTypes, notesItem.triangle_id)?.name ?? "מחשבה"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotesId(null)}
+                className="grid h-10 w-10 place-items-center rounded-full bg-slate-100"
+                aria-label="סגירה"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <TypeTools item={notesItem} spacious />
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-function GroupBlock({
-  title,
-  color,
-  items,
-  onOpen,
-  onEnter,
+function HubCard({
+  item,
+  type,
+  open,
+  onToggle,
+  onSource,
 }: {
-  title: string;
-  color: string;
-  items: Bubble[];
-  onOpen: (b: Bubble) => void;
-  onEnter: (b: Bubble) => void;
+  item: Bubble;
+  type: TriangleType;
+  open: boolean;
+  onToggle: () => void;
+  onSource: () => void;
 }) {
+  const progress = trackingProgress(item);
   return (
-    <div className="rounded-2xl bg-white/80 p-2.5 shadow-soft">
-      <div className="mb-2 flex h-8 items-center gap-2 px-1">
-        <span
-          className="h-2.5 w-2.5 rounded-full"
-          style={{ background: color }}
-        />
-        <span className="text-xs font-bold text-slate-600">{title}</span>
-        <span className="text-[11px] text-slate-400">{items.length}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {items.map((item) => {
-          const progress = trackingProgress(item);
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onOpen(item)}
-              onDoubleClick={() => onEnter(item)}
-              className="relative flex h-[104px] flex-col items-center justify-center rounded-2xl px-2"
-              style={{
-                background: `${color}14`,
-                border: `1px solid ${color}44`,
-              }}
-            >
-              {item.is_tracking && (
-                <div className="relative mb-1 grid h-10 w-10 place-items-center">
-                  <ProgressRing ratio={progress.ratio} size={40} color={color} />
-                  <span className="text-[9px] font-bold text-slate-600">
-                    {progress.done}
-                  </span>
-                </div>
-              )}
-              <div className="line-clamp-2 text-center text-[12px] font-bold leading-tight text-slate-800">
-                {item.title}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+    <div className="rounded-2xl bg-white">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-h-12 w-full items-center gap-2 px-2 text-start"
+      >
+        {type.template === "tracking" && (
+          <div className="relative grid h-10 w-10 place-items-center">
+            <ProgressRing ratio={progress.ratio} size={40} color={type.color} className="absolute inset-0" />
+            <span className="text-[9px] font-extrabold text-slate-600">{progress.done}</span>
+          </div>
+        )}
+        {type.template === "action" && (
+          <span
+            className={`grid h-6 w-6 place-items-center rounded-md border ${
+              item.action_done ? "bg-emerald-500 text-white" : "border-slate-300"
+            }`}
+          >
+            {item.action_done ? "✓" : ""}
+          </span>
+        )}
+        {type.template === "thought" && (
+          <span className="text-base" style={{ color: type.color }}>
+            ▼
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-bold text-slate-800">{item.title}</div>
+          {type.template === "action" && dueText(item) && (
+            <div className="truncate text-[11px] font-bold text-emerald-600">{dueText(item)}</div>
+          )}
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={onSource}
+        className="px-3 pb-1 text-[11px] font-bold text-slate-400"
+      >
+        לעולם המקור
+      </button>
+      {open && <TypeTools item={item} />}
     </div>
   );
 }

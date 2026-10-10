@@ -1,7 +1,5 @@
 import { animate, motion, useMotionValue } from "framer-motion";
-import { Check, Pencil } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useApp } from "../state/AppProvider";
 
 interface SwipePagerProps {
   page: number;
@@ -178,62 +176,26 @@ export function PageSwitcher({
   page: number;
   onPage: (page: number) => void;
 }) {
-  const { snapshot, setPageLabels } = useApp();
-  const [editing, setEditing] = useState(false);
-  const labels = snapshot.pageLabels;
+  const tabs = [
+    { id: 0, label: "🌐 עולמות" },
+    { id: 1, label: "🎯 מוקדי פוקוס" },
+    { id: 2, label: "⚙️ ניהול משולשים" },
+  ];
 
   return (
-    <div className="mx-auto mt-1.5 flex w-full max-w-sm items-center gap-1.5">
-      <div
-        dir="rtl"
-        className="flex h-10 min-w-0 flex-1 rounded-full bg-white p-1 shadow-soft"
-      >
-        {editing ? (
-          <>
-            <input
-              value={labels.map}
-              onChange={(e) => setPageLabels({ map: e.target.value })}
-              className="h-8 min-w-0 flex-1 rounded-full bg-slate-50 px-2 text-center text-[12px] font-bold text-slate-800 outline-none"
-              aria-label="שם עמוד המפה"
-            />
-            <input
-              value={labels.hub}
-              onChange={(e) => setPageLabels({ hub: e.target.value })}
-              className="h-8 min-w-0 flex-1 rounded-full bg-slate-50 px-2 text-center text-[12px] font-bold text-slate-800 outline-none"
-              aria-label="שם עמוד הפוקוס"
-            />
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => onPage(0)}
-              className={`h-8 min-w-0 flex-1 truncate rounded-full px-2 text-[12px] font-bold transition ${
-                page === 0 ? "bg-slate-900 text-white" : "text-slate-500"
-              }`}
-            >
-              {labels.map}
-            </button>
-            <button
-              type="button"
-              onClick={() => onPage(1)}
-              className={`h-8 min-w-0 flex-1 truncate rounded-full px-2 text-[12px] font-bold transition ${
-                page === 1 ? "bg-slate-900 text-white" : "text-slate-500"
-              }`}
-            >
-              {labels.hub}
-            </button>
-          </>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => setEditing((v) => !v)}
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-slate-500 shadow-soft"
-        aria-label={editing ? "סיום עריכת שמות" : "עריכת שמות העמודים"}
-      >
-        {editing ? <Check size={16} /> : <Pencil size={15} />}
-      </button>
+    <div dir="rtl" className="mx-auto mt-1.5 flex h-11 w-full max-w-lg rounded-2xl bg-white p-1 shadow-soft">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => onPage(tab.id)}
+          className={`h-9 min-w-0 flex-1 truncate rounded-xl px-1 text-[11px] font-extrabold transition ${
+            page === tab.id ? "bg-slate-900 text-white" : "text-slate-500"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
     </div>
   );
 }

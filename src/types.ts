@@ -16,6 +16,22 @@ export type StreakMode = "strict" | "flexible" | "cumulative";
 
 export type WorldKind = "bubbles" | "list";
 
+export type ToolTemplate = "tracking" | "action" | "thought";
+
+export interface TriangleType {
+  id: string;
+  name: string;
+  color: string;
+  template: ToolTemplate;
+  order_index: number;
+}
+
+export interface ActionStep {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -45,6 +61,11 @@ export interface Bubble {
   tracking_history: string[];
   streak_mode: StreakMode;
   container_type: WorldKind | null;
+  triangle_id: string | null;
+  due_at: string | null;
+  due_label: string;
+  action_done: boolean;
+  action_steps: ActionStep[];
 }
 
 export type ColorRoles = Record<BubbleStatus, string>;
@@ -52,6 +73,7 @@ export type ColorRoles = Record<BubbleStatus, string>;
 export interface PageLabels {
   map: string;
   hub: string;
+  studio: string;
 }
 
 export interface AppSnapshot {
@@ -60,6 +82,7 @@ export interface AppSnapshot {
   colorRoles: ColorRoles;
   pageLabels: PageLabels;
   listViews: Record<string, boolean>;
+  triangleTypes: TriangleType[];
 }
 
 export type DrillNode =

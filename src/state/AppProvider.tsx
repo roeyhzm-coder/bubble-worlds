@@ -8,7 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { layoutRing, newId, todayKey } from "../lib/defaults";
+import { EMPTY_ITEM_TOOLS, PALETTE, layoutRing, newId, todayKey } from "../lib/defaults";
+import { DEFAULT_TRIANGLE_TYPES, trianglePatch } from "../lib/triangles";
 import { loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
   deleteBubbleRemote,
@@ -31,6 +32,7 @@ import type {
   ColorRoles,
   DrillNode,
   PageLabels,
+  TriangleType,
   WorldKind,
 } from "../types";
 
@@ -80,6 +82,11 @@ interface AppContextValue {
   unmarkToday: (id: string) => void;
   minusDay: (id: string) => void;
   resetTracking: (id: string) => void;
+  setTriangleType: (id: string, triangleId: string) => void;
+  addTriangleType: () => string;
+  updateTriangleType: (id: string, patch: Partial<TriangleType>) => void;
+  deleteTriangleType: (id: string) => void;
+  moveTriangleType: (id: string, direction: -1 | 1) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -124,6 +131,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         void upsertColorRoles(merged.colorRoles);
         void upsertSetting("page_labels", merged.pageLabels);
         void upsertSetting("list_views", merged.listViews);
+        void upsertSetting("triangle_types", merged.triangleTypes);
         return merged;
       });
       queueMicrotask(() => {
@@ -210,6 +218,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         tracking_history: [],
         streak_mode: "flexible",
         container_type: null,
+        ...EMPTY_ITEM_TOOLS,
       };
       mutate((prev) => {
         const categories = parent
@@ -256,7 +265,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         category_id: categoryId,
         title: title.trim() || "פריט חדש",
         notes: "",
-        color: snapshotRef.current.colorRoles.default,
         status: "default",
         position_x: slot.x,
         position_y: slot.y,
@@ -268,6 +276,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         tracking_history: [],
         streak_mode: "flexible",
         container_type: null,
+        ...EMPTY_ITEM_TOOLS,
+        triangle_id: snapshotRef.current.triangleTypes[0]?.id ?? EMPTY_ITEM_TOOLS.triangle_id,
+        color: snapshotRef.current.triangleTypes[0]?.color ?? snapshotRef.current.colorRoles.default,
       };
       mutate((prev) => {
         const categories = parent
@@ -444,6 +455,103 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [updateBubble],
   );
 
+  const persistTriangles = useCallback((triangleTypes: TriangleType[]) => {
+    void upsertSetting("triangle_types", triangleTypes);
+  }, []);
+
+  const setTriangleType = useCallback(
+    (id: string, triangleId: string) => {
+      const type = snapshotRef.current.triangleTypes.find((item) => item.id === triangleId);
+      if (!type) return;
+      updateBubble(id, trianglePatch(type));
+    },
+    [updateBubble],
+  );
+
+  const addTriangleType = useCallback(() => {
+    const id = newId("tri");
+    mutate((prev) => {
+      const type: TriangleType = {
+        id,
+        name: "סוג חדש",
+        color: PALETTE[prev.triangleTypes.length % PALETTE.length] ?? "#94a3b8",
+        template: "tracking",
+        order_index: prev.triangleTypes.length,
+      };
+      const triangleTypes = [...prev.triangleTypes, type];
+      persistTriangles(triangleTypes);
+      return { ...prev, triangleTypes };
+    });
+    return id;
+  }, [mutate, persistTriangles]);
+
+  const updateTriangleType = useCallback(
+    (id: string, patch: Partial<TriangleType>) => {
+      mutate((prev) => {
+        const triangleTypes = prev.triangleTypes.map((item) =>
+          item.id === id ? { ...item, ...patch } : item,
+        );
+        const nextType = triangleTypes.find((item) => item.id === id);
+        const bubbles = nextType
+          ? prev.bubbles.map((bubble) =>
+              bubble.triangle_id === id
+                ? { ...bubble, ...trianglePatch(nextType), notes: bubble.notes }
+                : bubble,
+            )
+          : prev.bubbles;
+        persistTriangles(triangleTypes);
+        if (nextType) {
+          for (const bubble of bubbles.filter((item) => item.triangle_id === id)) {
+            void upsertBubble(bubble);
+          }
+        }
+        return { ...prev, triangleTypes, bubbles };
+      });
+    },
+    [mutate, persistTriangles],
+  );
+
+  const deleteTriangleType = useCallback(
+    (id: string) => {
+      mutate((prev) => {
+        if (prev.triangleTypes.length <= 1) return prev;
+        const triangleTypes = prev.triangleTypes
+          .filter((item) => item.id !== id)
+          .map((item, index) => ({ ...item, order_index: index }));
+        const fallback = triangleTypes[0] ?? DEFAULT_TRIANGLE_TYPES[0];
+        const bubbles = prev.bubbles.map((bubble) =>
+          bubble.triangle_id === id ? { ...bubble, ...trianglePatch(fallback) } : bubble,
+        );
+        persistTriangles(triangleTypes);
+        for (const bubble of bubbles.filter((item) => item.triangle_id === fallback.id)) {
+          void upsertBubble(bubble);
+        }
+        return { ...prev, triangleTypes, bubbles };
+      });
+    },
+    [mutate, persistTriangles],
+  );
+
+  const moveTriangleType = useCallback(
+    (id: string, direction: -1 | 1) => {
+      mutate((prev) => {
+        const list = [...prev.triangleTypes].sort((a, b) => a.order_index - b.order_index);
+        const index = list.findIndex((item) => item.id === id);
+        const swap = index + direction;
+        if (index < 0 || swap < 0 || swap >= list.length) return prev;
+        const current = list[index];
+        const other = list[swap];
+        if (!current || !other) return prev;
+        list[index] = other;
+        list[swap] = current;
+        const triangleTypes = list.map((item, order_index) => ({ ...item, order_index }));
+        persistTriangles(triangleTypes);
+        return { ...prev, triangleTypes };
+      });
+    },
+    [mutate, persistTriangles],
+  );
+
   const childrenOf = useCallback(
     (bubbleId: string) =>
       snapshot.bubbles.filter((b) => b.parent_bubble_id === bubbleId),
@@ -567,9 +675,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unmarkToday,
       minusDay,
       resetTracking,
+      setTriangleType,
+      addTriangleType,
+      updateTriangleType,
+      deleteTriangleType,
+      moveTriangleType,
     }),
     [
       addListItem,
+      addTriangleType,
       applyStatusColor,
       breadcrumbs,
       childrenOf,
@@ -579,6 +693,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currentWorldKind,
       deleteBubble,
       deleteCategory,
+      deleteTriangleType,
       drill,
       drillKey,
       focusListAdd,
@@ -586,11 +701,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       markToday,
       minusDay,
       moveNode,
+      moveTriangleType,
       page,
       requestCreate,
       resetTracking,
       setPageLabels,
+      setTriangleType,
       snapshot,
+      updateTriangleType,
       unmarkToday,
       updateBubble,
       updateCategory,

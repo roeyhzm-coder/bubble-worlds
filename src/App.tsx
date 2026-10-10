@@ -3,11 +3,12 @@ import { useState } from "react";
 import { EditDrawer } from "./components/EditDrawer";
 import { FocusHub } from "./components/FocusHub";
 import { PageSwitcher, SwipePager } from "./components/SwipePager";
+import { TriangleStudio } from "./components/TriangleStudio";
 import { WorldMap } from "./components/WorldMap";
 import { useApp } from "./state/AppProvider";
 
 export default function App() {
-  const { page, setPage, cloud, requestCreate } = useApp();
+  const { page, setPage, cloud, requestCreate, addTriangleType } = useApp();
   const [dragging, setDragging] = useState(false);
 
   return (
@@ -28,16 +29,19 @@ export default function App() {
       <SwipePager page={page} onPage={setPage} locked={dragging}>
         <WorldMap onDragChange={setDragging} />
         <FocusHub />
+        <TriangleStudio />
       </SwipePager>
 
-      <button
-        type="button"
-        onClick={requestCreate}
-        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-slate-900 text-white shadow-bubble"
-        aria-label="הוספה"
-      >
-        <Plus size={24} />
-      </button>
+      {page !== 1 && (
+        <button
+          type="button"
+          onClick={() => (page === 2 ? addTriangleType() : requestCreate())}
+          className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-slate-900 text-white shadow-bubble"
+          aria-label="הוספה"
+        >
+          <Plus size={24} />
+        </button>
+      )}
 
       <EditDrawer />
     </div>
