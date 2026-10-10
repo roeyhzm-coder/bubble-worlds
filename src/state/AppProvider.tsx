@@ -19,6 +19,7 @@ import {
   upsertBubble,
   upsertCategory,
   upsertColorRoles,
+  upsertSetting,
 } from "../lib/supabase";
 import { markDone, removeLastDay } from "../lib/tracking";
 import type {
@@ -29,6 +30,7 @@ import type {
   Category,
   ColorRoles,
   DrillNode,
+  PageLabels,
 } from "../types";
 
 interface AppContextValue {
@@ -47,7 +49,10 @@ interface AppContextValue {
   openEditor: (target: { type: "category" | "bubble"; id: string }) => void;
   closeEditor: () => void;
   addCategory: () => void;
-  addBubble: () => void;
+  addBubble: (opts?: { title?: string; openEditor?: boolean }) => string | null;
+  setPageLabels: (labels: Partial<PageLabels>) => void;
+  toggleListView: (key: string) => void;
+  drillKey: string;
   updateCategory: (id: string, patch: Partial<Category>) => void;
   updateBubble: (id: string, patch: Partial<Bubble>) => void;
   deleteCategory: (id: string) => void;
@@ -102,6 +107,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         for (const cat of merged.categories) void upsertCategory(cat);
         for (const bub of merged.bubbles) void upsertBubble(bub);
         void upsertColorRoles(merged.colorRoles);
+        void upsertSetting("page_labels", merged.pageLabels);
+        void upsertSetting("list_views", merged.listViews);
         return merged;
       });
       queueMicrotask(() => {
@@ -138,43 +145,71 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setEditing({ type: "category", id: cat.id });
   }, [mutate]);
 
-  const addBubble = useCallback(() => {
-    const current = snapshotRef.current;
-    let categoryId = current.categories[0]?.id;
-    let parent: string | null = null;
-    if (drill.kind === "category") categoryId = drill.id;
-    if (drill.kind === "bubble") {
-      const parentBubble = current.bubbles.find((b) => b.id === drill.id);
-      categoryId = parentBubble?.category_id ?? categoryId;
-      parent = drill.id;
-    }
-    if (!categoryId) {
-      addCategory();
-      return;
-    }
-    const roles = current.colorRoles;
-    const bubble: Bubble = {
-      id: newId("bub"),
-      parent_bubble_id: parent,
-      category_id: categoryId,
-      title: "בועה חדשה",
-      notes: "",
-      color: roles.default,
-      status: "default",
-      position_x: 42 + Math.random() * 16,
-      position_y: 38 + Math.random() * 16,
-      size_multiplier: 1,
-      created_at: new Date().toISOString(),
-      is_tracking: false,
-      target_days: 30,
-      weekly_frequency: 7,
-      tracking_history: [],
-      streak_mode: "flexible",
-    };
-    mutate((prev) => ({ ...prev, bubbles: [...prev.bubbles, bubble] }));
-    void upsertBubble(bubble);
-    setEditing({ type: "bubble", id: bubble.id });
-  }, [addCategory, drill, mutate]);
+  const addBubble = useCallback(
+    (opts?: { title?: string; openEditor?: boolean }) => {
+      const current = snapshotRef.current;
+      let categoryId = current.categories[0]?.id;
+      let parent: string | null = null;
+      if (drill.kind === "category") categoryId = drill.id;
+      if (drill.kind === "bubble") {
+        const parentBubble = current.bubbles.find((b) => b.id === drill.id);
+        categoryId = parentBubble?.category_id ?? categoryId;
+        parent = drill.id;
+      }
+      if (!categoryId) {
+        addCategory();
+        return null;
+      }
+      const roles = current.colorRoles;
+      const bubble: Bubble = {
+        id: newId("bub"),
+        parent_bubble_id: parent,
+        category_id: categoryId,
+        title: opts?.title?.trim() || "בועה חדשה",
+        notes: "",
+        color: roles.default,
+        status: "default",
+        position_x: 42 + Math.random() * 16,
+        position_y: 38 + Math.random() * 16,
+        size_multiplier: 1,
+        created_at: new Date().toISOString(),
+        is_tracking: false,
+        target_days: 30,
+        weekly_frequency: 7,
+        tracking_history: [],
+        streak_mode: "flexible",
+      };
+      mutate((prev) => ({ ...prev, bubbles: [...prev.bubbles, bubble] }));
+      void upsertBubble(bubble);
+      if (opts?.openEditor !== false && !opts?.title) {
+        setEditing({ type: "bubble", id: bubble.id });
+      }
+      return bubble.id;
+    },
+    [addCategory, drill, mutate],
+  );
+
+  const setPageLabels = useCallback(
+    (labels: Partial<PageLabels>) => {
+      mutate((prev) => {
+        const pageLabels = { ...prev.pageLabels, ...labels };
+        void upsertSetting("page_labels", pageLabels);
+        return { ...prev, pageLabels };
+      });
+    },
+    [mutate],
+  );
+
+  const toggleListView = useCallback(
+    (key: string) => {
+      mutate((prev) => {
+        const listViews = { ...prev.listViews, [key]: !prev.listViews[key] };
+        void upsertSetting("list_views", listViews);
+        return { ...prev, listViews };
+      });
+    },
+    [mutate],
+  );
 
   const updateCategory = useCallback(
     (id: string, patch: Partial<Category>) => {
@@ -338,6 +373,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [drill, snapshot.bubbles, snapshot.categories]);
 
   const currentTitle = breadcrumbs[breadcrumbs.length - 1]?.label ?? "עולמות";
+  const drillKey =
+    drill.kind === "root"
+      ? "root"
+      : drill.kind === "category"
+        ? `category:${drill.id}`
+        : `bubble:${drill.id}`;
 
   const visibleCategories = drill.kind === "root" ? snapshot.categories : [];
   const visibleBubbles = useMemo(() => {
@@ -368,6 +409,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       closeEditor: () => setEditing(null),
       addCategory,
       addBubble,
+      setPageLabels,
+      toggleListView,
+      drillKey,
       updateCategory,
       updateBubble,
       deleteCategory,
@@ -382,6 +426,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addBubble,
       addCategory,
       applyStatusColor,
+      drillKey,
       breadcrumbs,
       childrenOf,
       currentTitle,
@@ -394,7 +439,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       moveNode,
       page,
       resetTracking,
+      setPageLabels,
       snapshot,
+      toggleListView,
       updateBubble,
       updateCategory,
       visibleBubbles,

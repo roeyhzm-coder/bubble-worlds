@@ -10,6 +10,8 @@ export function loadLocal(): AppSnapshot {
       categories: parsed.categories ?? [],
       bubbles: parsed.bubbles ?? [],
       colorRoles: parsed.colorRoles ?? EMPTY_SNAPSHOT.colorRoles,
+      pageLabels: parsed.pageLabels ?? EMPTY_SNAPSHOT.pageLabels,
+      listViews: parsed.listViews ?? {},
     });
   } catch {
     return mergeSeed(EMPTY_SNAPSHOT);
@@ -29,5 +31,7 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
     categories: [...cats.values()],
     bubbles: [...bubs.values()],
     colorRoles: { ...local.colorRoles, ...remote.colorRoles },
+    pageLabels: { ...local.pageLabels, ...remote.pageLabels },
+    listViews: { ...local.listViews, ...remote.listViews },
   });
 }

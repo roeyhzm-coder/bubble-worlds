@@ -1,4 +1,4 @@
-import type { AppSnapshot, Bubble, Category, ColorRoles } from "../types";
+import type { AppSnapshot, Bubble, Category, ColorRoles, PageLabels } from "../types";
 
 export const STORAGE_KEY = "bubble-worlds-v1";
 
@@ -181,10 +181,17 @@ export const DEFAULT_BUBBLES: Bubble[] = [
   },
 ];
 
+export const DEFAULT_PAGE_LABELS: PageLabels = {
+  map: "מפת עולמות",
+  hub: "מוקדי פוקוס",
+};
+
 export const EMPTY_SNAPSHOT: AppSnapshot = {
   categories: [],
   bubbles: [],
   colorRoles: { ...DEFAULT_COLOR_ROLES },
+  pageLabels: { ...DEFAULT_PAGE_LABELS },
+  listViews: {},
 };
 
 export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
@@ -200,6 +207,8 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
       ...DEFAULT_BUBBLES.filter((b) => !bubIds.has(b.id)),
     ],
     colorRoles: { ...DEFAULT_COLOR_ROLES, ...snapshot.colorRoles },
+    pageLabels: { ...DEFAULT_PAGE_LABELS, ...snapshot.pageLabels },
+    listViews: { ...snapshot.listViews },
   };
 }
 

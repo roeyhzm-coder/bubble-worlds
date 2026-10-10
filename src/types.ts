@@ -45,10 +45,17 @@ export interface Bubble {
 
 export type ColorRoles = Record<BubbleStatus, string>;
 
+export interface PageLabels {
+  map: string;
+  hub: string;
+}
+
 export interface AppSnapshot {
   categories: Category[];
   bubbles: Bubble[];
   colorRoles: ColorRoles;
+  pageLabels: PageLabels;
+  listViews: Record<string, boolean>;
 }
 
 export type DrillNode =
