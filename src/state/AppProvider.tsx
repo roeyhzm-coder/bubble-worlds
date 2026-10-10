@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { newId, todayKey } from "../lib/defaults";
+import { layoutRing, newId, todayKey } from "../lib/defaults";
 import { loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
   deleteBubbleRemote,
@@ -59,6 +59,7 @@ interface AppContextValue {
   }) => void;
   addListItem: (title: string) => string | null;
   setPageLabels: (labels: Partial<PageLabels>) => void;
+  toggleListView: (key: string) => void;
   drillKey: string;
   updateCategory: (id: string, patch: Partial<Category>) => void;
   updateBubble: (id: string, patch: Partial<Bubble>) => void;
@@ -156,12 +157,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (input: { name: string; color: string; size_multiplier: number }) => {
       const name = input.name.trim() || "בועה חדשה";
       if (composer?.mode === "create" && composer.type === "category") {
+        const slot = layoutRing(
+          snapshotRef.current.categories.length,
+          snapshotRef.current.categories.length + 1,
+        );
         const cat: Category = {
           id: newId("cat"),
           name,
           color: input.color,
-          position_x: 50,
-          position_y: 50,
+          position_x: slot.x,
+          position_y: slot.y,
           order_index: snapshotRef.current.categories.length,
           created_at: new Date().toISOString(),
         };
@@ -175,6 +180,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setComposer({ mode: "create", type: "category" });
         return;
       }
+      const siblings = snapshotRef.current.bubbles.filter(
+        (item) =>
+          item.category_id === categoryId &&
+          item.parent_bubble_id === parent,
+      );
+      const slot = layoutRing(siblings.length, siblings.length + 1);
       const bubble: Bubble = {
         id: newId("bub"),
         parent_bubble_id: parent,
@@ -183,8 +194,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         notes: "",
         color: input.color,
         status: "default",
-        position_x: 50,
-        position_y: 50,
+        position_x: slot.x,
+        position_y: slot.y,
         size_multiplier: input.size_multiplier,
         created_at: new Date().toISOString(),
         is_tracking: false,
@@ -204,6 +215,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (title: string) => {
       const { categoryId, parent } = resolveParent();
       if (!categoryId) return null;
+      const siblings = snapshotRef.current.bubbles.filter(
+        (item) =>
+          item.category_id === categoryId &&
+          item.parent_bubble_id === parent,
+      );
+      const slot = layoutRing(siblings.length, siblings.length + 1);
       const bubble: Bubble = {
         id: newId("bub"),
         parent_bubble_id: parent,
@@ -212,8 +229,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         notes: "",
         color: snapshotRef.current.colorRoles.default,
         status: "default",
-        position_x: 50,
-        position_y: 50,
+        position_x: slot.x,
+        position_y: slot.y,
         size_multiplier: 1,
         created_at: new Date().toISOString(),
         is_tracking: false,
@@ -227,6 +244,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return bubble.id;
     },
     [mutate, resolveParent],
+  );
+
+  const toggleListView = useCallback(
+    (key: string) => {
+      mutate((prev) => {
+        const listViews = { ...prev.listViews, [key]: !prev.listViews[key] };
+        void upsertSetting("list_views", listViews);
+        return { ...prev, listViews };
+      });
+    },
+    [mutate],
   );
 
   const setPageLabels = useCallback(
@@ -452,6 +480,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       commitCreate,
       addListItem,
       setPageLabels,
+      toggleListView,
       drillKey,
       updateCategory,
       updateBubble,
@@ -483,6 +512,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       resetTracking,
       setPageLabels,
       snapshot,
+      toggleListView,
       unmarkToday,
       updateBubble,
       updateCategory,

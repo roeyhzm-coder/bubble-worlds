@@ -80,7 +80,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     color: "#38bdf8",
     status: "active_tracking",
     position_x: 32,
-    position_y: 38,
+    position_y: 34,
     size_multiplier: 1,
     created_at: "2026-01-01T00:01:00.000Z",
     is_tracking: true,
@@ -98,7 +98,7 @@ export const DEFAULT_BUBBLES: Bubble[] = [
     color: "#34d399",
     status: "focus",
     position_x: 68,
-    position_y: 42,
+    position_y: 58,
     size_multiplier: 1,
     created_at: "2026-01-01T00:01:01.000Z",
     is_tracking: false,
@@ -212,14 +212,50 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
       ...snapshot.categories.map((c) => restoreSeedPosition(c, DEFAULT_CATEGORIES)),
       ...DEFAULT_CATEGORIES.filter((c) => !catIds.has(c.id)),
     ],
-    bubbles: [
+    bubbles: unstickClusteredBubbles([
       ...snapshot.bubbles.map((b) => restoreSeedPosition(b, DEFAULT_BUBBLES)),
       ...DEFAULT_BUBBLES.filter((b) => !bubIds.has(b.id)),
-    ],
+    ]),
     colorRoles: { ...DEFAULT_COLOR_ROLES, ...snapshot.colorRoles },
     pageLabels: { ...DEFAULT_PAGE_LABELS, ...snapshot.pageLabels },
     listViews: { ...snapshot.listViews },
   };
+}
+
+export function layoutRing(index: number, total: number): { x: number; y: number } {
+  const count = Math.max(total, 1);
+  if (count === 1) return { x: 50, y: 44 };
+  const angle = -Math.PI / 2 + (2 * Math.PI * index) / count;
+  const radius = count <= 3 ? 26 : count <= 6 ? 30 : 33;
+  return {
+    x: Number((50 + Math.cos(angle) * radius).toFixed(2)),
+    y: Number((50 + Math.sin(angle) * radius).toFixed(2)),
+  };
+}
+
+export function unstickClusteredBubbles(bubbles: Bubble[]): Bubble[] {
+  const groups = new Map<string, Bubble[]>();
+  for (const bubble of bubbles) {
+    const key = `${bubble.category_id}::${bubble.parent_bubble_id ?? "root"}`;
+    const list = groups.get(key) ?? [];
+    list.push(bubble);
+    groups.set(key, list);
+  }
+  const next = new Map(bubbles.map((bubble) => [bubble.id, bubble]));
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const cx = group.reduce((sum, item) => sum + item.position_x, 0) / group.length;
+    const cy = group.reduce((sum, item) => sum + item.position_y, 0) / group.length;
+    const clustered = group.every(
+      (item) => Math.hypot(item.position_x - cx, item.position_y - cy) < 7,
+    );
+    if (!clustered) continue;
+    group.forEach((item, index) => {
+      const pos = layoutRing(index, group.length);
+      next.set(item.id, { ...item, position_x: pos.x, position_y: pos.y });
+    });
+  }
+  return bubbles.map((bubble) => next.get(bubble.id) ?? bubble);
 }
 
 export function newId(prefix: string): string {
