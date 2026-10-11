@@ -1,15 +1,18 @@
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2, Trophy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { dueText } from "../lib/triangles";
 import { trackingProgress } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, TriangleType } from "../types";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { TypeTools } from "./ItemTools";
 import { ProgressRing } from "./ProgressRing";
 
 export function FocusHub() {
   const { snapshot, setPage, setDrill } = useApp();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const groups = useMemo(() => {
     return snapshot.triangleTypes
@@ -59,7 +62,10 @@ export function FocusHub() {
                   item={item}
                   type={type}
                   open={openId === item.id}
+                  saved={savedId === item.id}
                   onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
+                  onSave={() => setSavedId(item.id)}
+                  onDelete={() => setPendingDelete(item.id)}
                   onSource={() => {
                     setDrill(
                       item.parent_bubble_id
@@ -80,7 +86,24 @@ export function FocusHub() {
           </div>
         )}
       </div>
+      <HubDeleteDialog id={pendingDelete} onClose={() => setPendingDelete(null)} />
     </section>
+  );
+}
+
+function HubDeleteDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const { deleteBubble } = useApp();
+  return (
+    <ConfirmDialog
+      open={Boolean(id)}
+      title="למחוק את הפריט?"
+      body="הפריט יימחק מהעולם וממוקדי הפוקוס."
+      onCancel={onClose}
+      onConfirm={() => {
+        if (id) deleteBubble(id);
+        onClose();
+      }}
+    />
   );
 }
 
@@ -88,22 +111,30 @@ function HubCard({
   item,
   type,
   open,
+  saved,
   onToggle,
+  onSave,
+  onDelete,
   onSource,
 }: {
   item: Bubble;
   type: TriangleType;
   open: boolean;
+  saved: boolean;
   onToggle: () => void;
+  onSave: () => void;
+  onDelete: () => void;
   onSource: () => void;
 }) {
+  const { saveBubbleAsSuccess } = useApp();
   const progress = trackingProgress(item);
   return (
     <div className="rounded-2xl bg-white">
+      <div className="flex min-h-12 w-full items-center gap-1 px-2">
       <button
         type="button"
         onClick={onToggle}
-        className="flex min-h-12 w-full items-center gap-2 px-2 text-start"
+        className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-start"
       >
         {type.template === "tracking" && (
           <div className="relative grid h-10 w-10 shrink-0 place-items-center">
@@ -137,6 +168,31 @@ function HubCard({
           <ChevronDown size={16} className="shrink-0 text-slate-400" />
         )}
       </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (saveBubbleAsSuccess(item.id)) onSave();
+          }}
+          className={`grid h-10 w-8 shrink-0 place-items-center ${
+            saved ? "text-amber-500" : "text-amber-400"
+          }`}
+          aria-label="שמור כהצלחה"
+        >
+          <Trophy size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
+          aria-label="מחיקה"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
       {open && (
         <>
           <button

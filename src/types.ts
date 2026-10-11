@@ -74,7 +74,19 @@ export interface PageLabels {
   map: string;
   hub: string;
   daily: string;
+  successes: string;
   studio: string;
+}
+
+export type SuccessSource = "bubble" | "daily" | "manual";
+
+export interface Success {
+  id: string;
+  title: string;
+  notes: string;
+  source_type: SuccessSource;
+  created_at: string;
+  category_name: string;
 }
 
 export interface DailyTask {
@@ -94,6 +106,7 @@ export interface AppSnapshot {
   listViews: Record<string, boolean>;
   triangleTypes: TriangleType[];
   dailyTasks: DailyTask[];
+  successes: Success[];
   deletedIds: string[];
 }
 

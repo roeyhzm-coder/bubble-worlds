@@ -4,6 +4,7 @@ import { PALETTE } from "../lib/defaults";
 import { statusLabel } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { BubbleStatus } from "../types";
+import { Portal } from "./Portal";
 
 const STATUSES: BubbleStatus[] = [
   "active_tracking",
@@ -21,10 +22,11 @@ export function ColorSettingsModal({ open, onClose }: ColorSettingsModalProps) {
   const { snapshot, applyStatusColor } = useApp();
 
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[70] grid place-items-end bg-slate-900/25 sm:place-items-center"
+          className="fixed inset-0 z-[70] grid place-items-center bg-slate-900/25"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -89,5 +91,6 @@ export function ColorSettingsModal({ open, onClose }: ColorSettingsModalProps) {
         </motion.div>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }

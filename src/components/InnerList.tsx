@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2, Trophy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { findTriangle } from "../lib/triangles";
 import { useApp } from "../state/AppProvider";
@@ -17,10 +17,12 @@ export function InnerList({ items }: { items: Bubble[] }) {
     setTriangleType,
     focusListAdd,
     drillKey,
+    saveBubbleAsSuccess,
   } = useApp();
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const addRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -122,6 +124,19 @@ export function InnerList({ items }: { items: Bubble[] }) {
                     ‹
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (saveBubbleAsSuccess(item.id)) setSavedId(item.id);
+                  }}
+                  className={`grid h-10 w-8 shrink-0 place-items-center ${
+                    savedId === item.id ? "text-amber-500" : "text-amber-400"
+                  }`}
+                  aria-label="שמור כהצלחה"
+                >
+                  <Trophy size={15} />
+                </button>
                 <button
                   type="button"
                   onClick={(e) => {

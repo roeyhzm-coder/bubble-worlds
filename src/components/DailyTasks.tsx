@@ -1,6 +1,6 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Moon, Plus, Sun, Trash2, Trophy } from "lucide-react";
 import { useMemo, useState } from "react";
-import { archivedTasks, bangs, todayTasks } from "../lib/daily";
+import { archivedTasks, bangs, dateTasks, tomorrowKey } from "../lib/daily";
 import { todayKey } from "../lib/defaults";
 import { useApp } from "../state/AppProvider";
 
@@ -11,10 +11,21 @@ export function DailyTasks() {
     updateDailyTask,
     deleteDailyTask,
     toggleDailyTask,
+    dailyViewDate,
+    setDailyViewDate,
+    moveDailyTask,
+    saveDailyAsSuccess,
   } = useApp();
   const [showArchive, setShowArchive] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const today = todayKey();
-  const items = useMemo(() => todayTasks(snapshot.dailyTasks, today), [snapshot.dailyTasks, today]);
+  const tomorrow = tomorrowKey();
+  const planningTomorrow = dailyViewDate === tomorrow;
+  const viewDate = planningTomorrow ? tomorrow : today;
+  const items = useMemo(
+    () => dateTasks(snapshot.dailyTasks, viewDate),
+    [snapshot.dailyTasks, viewDate],
+  );
   const archive = useMemo(
     () => archivedTasks(snapshot.dailyTasks, today),
     [snapshot.dailyTasks, today],
@@ -28,58 +39,106 @@ export function DailyTasks() {
         <div className="text-[15px] font-extrabold text-slate-800">
           {snapshot.pageLabels.daily}
         </div>
-        <div className="text-[11px] font-bold text-slate-400">
-          {done}/{total || 6} הושלמו · משימות שלא נסגרו גולשות למחר
+        <div className="mb-2 text-[11px] font-bold text-slate-400">
+          {planningTomorrow
+            ? "תכנון לילה למחר · ללא סימני דחייה"
+            : `${done}/${total || 6} הושלמו · דחייה רק ממשימות אתמול`}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-white p-1 shadow-soft">
+          <button
+            type="button"
+            onClick={() => setDailyViewDate(today)}
+            className={`flex h-10 items-center justify-center gap-1 rounded-xl text-[12px] font-extrabold ${
+              !planningTomorrow ? "bg-amber-100 text-amber-900" : "text-slate-500"
+            }`}
+          >
+            <Sun size={14} />
+            משימות להיום
+          </button>
+          <button
+            type="button"
+            onClick={() => setDailyViewDate(tomorrow)}
+            className={`flex h-10 items-center justify-center gap-1 rounded-xl text-[12px] font-extrabold ${
+              planningTomorrow ? "bg-indigo-100 text-indigo-900" : "text-slate-500"
+            }`}
+          >
+            <Moon size={14} />
+            תכנון למחר
+          </button>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 pb-24 no-scrollbar">
         {items.map((item, index) => {
-          const marks = bangs(item.rollover_count);
+          const marks = planningTomorrow ? "" : bangs(item.rollover_count);
           return (
             <div
               key={item.id}
-              className={`flex min-h-12 items-center gap-1.5 rounded-2xl bg-white px-2 shadow-soft ${
+              className={`rounded-2xl bg-white px-2 py-1 shadow-soft ${
                 item.completed ? "opacity-55" : ""
               }`}
             >
-              <span className="w-5 shrink-0 text-center text-[12px] font-extrabold text-slate-400">
-                {index + 1}
-              </span>
-              <button
-                type="button"
-                onClick={() => toggleDailyTask(item.id)}
-                className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${
-                  item.completed ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400"
-                }`}
-                aria-label={item.completed ? "בטל סימון" : "סמן כהושלם"}
-              >
-                V
-              </button>
-              {marks && (
-                <span className="shrink-0 text-[15px] font-black leading-none text-rose-500">
-                  {marks}
+              <div className="flex min-h-12 items-center gap-1.5">
+                <span className="w-5 shrink-0 text-center text-[12px] font-extrabold text-slate-400">
+                  {index + 1}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => toggleDailyTask(item.id)}
+                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${
+                    item.completed ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400"
+                  }`}
+                  aria-label={item.completed ? "בטל סימון" : "סמן כהושלם"}
+                >
+                  V
+                </button>
+                {marks && (
+                  <span className="shrink-0 text-[15px] font-black leading-none text-rose-500">
+                    {marks}
+                  </span>
+                )}
+                <input
+                  value={item.text}
+                  onChange={(e) => updateDailyTask(item.id, { text: e.target.value })}
+                  placeholder={planningTomorrow ? "משימה למחר…" : "משימה להיום…"}
+                  className={`h-11 min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-slate-800 outline-none ${
+                    item.completed ? "line-through" : ""
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (saveDailyAsSuccess(item.id)) setSavedId(item.id);
+                  }}
+                  className={`grid h-10 w-8 shrink-0 place-items-center ${
+                    savedId === item.id ? "text-amber-500" : "text-amber-400"
+                  }`}
+                  aria-label="שמור כהצלחה"
+                >
+                  <Trophy size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteDailyTask(item.id);
+                  }}
+                  className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
+                  aria-label="מחיקה"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              {item.text.trim() && (
+                <button
+                  type="button"
+                  onClick={() => moveDailyTask(item.id, planningTomorrow ? today : tomorrow)}
+                  className="mb-1 h-7 w-full text-[11px] font-extrabold text-slate-400"
+                >
+                  {planningTomorrow ? "העבר להיום" : "העבר למחר"}
+                </button>
               )}
-              <input
-                value={item.text}
-                onChange={(e) => updateDailyTask(item.id, { text: e.target.value })}
-                placeholder="משימה להיום…"
-                className={`h-11 min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-slate-800 outline-none ${
-                  item.completed ? "line-through" : ""
-                }`}
-              />
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteDailyTask(item.id);
-                }}
-                className="grid h-10 w-9 shrink-0 place-items-center text-rose-400"
-                aria-label="מחיקה"
-              >
-                <Trash2 size={15} />
-              </button>
             </div>
           );
         })}
@@ -93,7 +152,7 @@ export function DailyTasks() {
           הוסף משימה
         </button>
 
-        {archive.length > 0 && (
+        {!planningTomorrow && archive.length > 0 && (
           <div className="pt-2">
             <button
               type="button"

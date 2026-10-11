@@ -1,5 +1,6 @@
 import type { ActionStep, AppSnapshot, Bubble, ColorRoles, PageLabels, WorldKind } from "../types";
 import { applyDailyRollover, asDailyTasks } from "./daily";
+import { asSuccesses } from "./successes";
 import { inferTriangleId, mergeTriangleTypes } from "./triangles";
 
 export const EMPTY_ITEM_TOOLS = {
@@ -36,6 +37,7 @@ export const DEFAULT_PAGE_LABELS: PageLabels = {
   map: "עולמות",
   hub: "מוקדי פוקוס",
   daily: "משימות יומיות",
+  successes: "הצלחות",
   studio: "ניהול משולשים",
 };
 
@@ -47,6 +49,7 @@ export const EMPTY_SNAPSHOT: AppSnapshot = {
   listViews: {},
   triangleTypes: [],
   dailyTasks: [],
+  successes: [],
   deletedIds: [],
 };
 
@@ -95,6 +98,7 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
     listViews: { ...snapshot.listViews },
     triangleTypes: mergeTriangleTypes(snapshot.triangleTypes ?? []),
     dailyTasks: applyDailyRollover(asDailyTasks(snapshot.dailyTasks)),
+    successes: asSuccesses(snapshot.successes).filter((item) => !deleted.has(item.id)),
     deletedIds: [...deleted],
   };
 }

@@ -62,6 +62,20 @@ create table if not exists public.bw_daily_tasks (
   order_index integer not null default 0
 );
 
+create table if not exists public.bw_successes (
+  id text primary key,
+  title text not null,
+  notes text not null default '',
+  source_type text not null default 'manual',
+  created_at timestamptz not null default now(),
+  category_name text not null default ''
+);
+
+alter table public.bw_successes enable row level security;
+drop policy if exists bw_successes_all on public.bw_successes;
+create policy bw_successes_all on public.bw_successes
+  for all using (true) with check (true);
+
 create index if not exists bw_bubbles_category_idx on public.bw_bubbles (category_id);
 create index if not exists bw_bubbles_parent_idx on public.bw_bubbles (parent_bubble_id);
 

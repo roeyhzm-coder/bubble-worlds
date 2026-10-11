@@ -1,5 +1,5 @@
 import { Check, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { PALETTE } from "../lib/defaults";
 import {
   computeStreak,
@@ -89,6 +89,18 @@ export function TypeTools({
 function TrackingTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble, markToday, unmarkToday, minusDay, resetTracking } = useApp();
   const [confirmReset, setConfirmReset] = useState(false);
+  const [customDays, setCustomDays] = useState(String(item.target_days || 30));
+
+  useEffect(() => {
+    setCustomDays(String(item.target_days || 30));
+  }, [item.target_days]);
+
+  const applyCustomDays = (raw: string) => {
+    setCustomDays(raw);
+    const next = Math.round(Number(raw));
+    if (!Number.isFinite(next) || next < 1) return;
+    updateBubble(item.id, { target_days: Math.min(3650, next) });
+  };
   const progress = trackingProgress(item);
   const doneToday = hasDate(item.tracking_history);
   const streak = useMemo(
@@ -152,6 +164,19 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
           </button>
         ))}
       </div>
+      <label className="flex h-11 items-center gap-2 rounded-xl bg-slate-50 px-3">
+        <span className="shrink-0 text-[11px] font-extrabold text-slate-500">ימים מותאמים אישית</span>
+        <input
+          type="number"
+          min={1}
+          max={3650}
+          inputMode="numeric"
+          value={customDays}
+          onChange={(e) => applyCustomDays(e.target.value)}
+          className="h-10 min-w-0 flex-1 bg-transparent text-end text-sm font-extrabold text-slate-800 outline-none"
+          aria-label="ימים מותאמים אישית"
+        />
+      </label>
 
       <ConfirmDialog
         open={confirmReset}

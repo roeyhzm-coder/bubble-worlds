@@ -4,6 +4,7 @@ import { DailyTasks } from "./components/DailyTasks";
 import { EditDrawer } from "./components/EditDrawer";
 import { FocusHub } from "./components/FocusHub";
 import { PageSwitcher, SwipePager } from "./components/SwipePager";
+import { Successes } from "./components/Successes";
 import { TriangleStudio } from "./components/TriangleStudio";
 import { WorldMap } from "./components/WorldMap";
 import { useApp } from "./state/AppProvider";
@@ -31,15 +32,16 @@ export default function App() {
         <WorldMap onDragChange={setDragging} />
         <FocusHub />
         <DailyTasks />
+        <Successes />
         <TriangleStudio />
       </SwipePager>
 
-      {page !== 1 && (
+      {page !== 1 && page !== 3 && (
         <button
           type="button"
           onClick={() => {
             if (page === 2) addDailyTask();
-            else if (page === 3) addTriangleType();
+            else if (page === 4) addTriangleType();
             else requestCreate();
           }}
           className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-slate-900 text-white shadow-bubble"

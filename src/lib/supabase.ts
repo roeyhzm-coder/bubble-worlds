@@ -10,6 +10,7 @@ import {
 } from "../types";
 import { applyDailyRollover, asDailyTasks } from "./daily";
 import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
+import { asSuccesses } from "./successes";
 import { asActionSteps, asTriangleTypes } from "./triangles";
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -41,6 +42,7 @@ function asPageLabels(value: unknown): PageLabels {
     map: rec.map?.trim() || DEFAULT_PAGE_LABELS.map,
     hub: rec.hub?.trim() || DEFAULT_PAGE_LABELS.hub,
     daily: rec.daily?.trim() || DEFAULT_PAGE_LABELS.daily,
+    successes: rec.successes?.trim() || DEFAULT_PAGE_LABELS.successes,
     studio: rec.studio?.trim() || DEFAULT_PAGE_LABELS.studio,
   };
 }
@@ -95,6 +97,7 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     listViews: asListViews(map.list_views),
     triangleTypes: asTriangleTypes(map.triangle_types),
     dailyTasks: applyDailyRollover(asDailyTasks(map.daily_tasks)),
+    successes: asSuccesses(map.successes),
     deletedIds: [],
   };
 }

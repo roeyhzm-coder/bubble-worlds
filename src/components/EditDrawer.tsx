@@ -5,6 +5,7 @@ import { PALETTE } from "../lib/defaults";
 import { useVisualViewport } from "../lib/useVisualViewport";
 import { useApp } from "../state/AppProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { Portal } from "./Portal";
 
 export function EditDrawer() {
   const {
@@ -32,6 +33,7 @@ export function EditDrawer() {
   const open = Boolean(composer);
 
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <motion.div
@@ -113,6 +115,7 @@ export function EditDrawer() {
         </motion.div>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
 

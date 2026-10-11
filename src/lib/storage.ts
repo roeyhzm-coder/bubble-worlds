@@ -1,6 +1,7 @@
 import type { AppSnapshot, Bubble, Category } from "../types";
 import { mergeDailyTasks } from "./daily";
 import { EMPTY_SNAPSHOT, STORAGE_KEY, mergeSeed } from "./defaults";
+import { mergeSuccesses } from "./successes";
 
 const RECENT_MS = 5 * 60 * 1000;
 
@@ -22,6 +23,7 @@ export function loadLocal(): AppSnapshot {
       listViews: parsed.listViews ?? {},
       triangleTypes: Array.isArray(parsed.triangleTypes) ? parsed.triangleTypes : [],
       dailyTasks: Array.isArray(parsed.dailyTasks) ? parsed.dailyTasks : [],
+      successes: Array.isArray(parsed.successes) ? parsed.successes : [],
       deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
     });
   } catch {
@@ -97,6 +99,7 @@ export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnap
     listViews: { ...local.listViews, ...remote.listViews },
     triangleTypes: [...types.values()],
     dailyTasks: mergeDailyTasks(local.dailyTasks ?? [], remote.dailyTasks ?? []),
+    successes: mergeSuccesses(local.successes ?? [], remote.successes ?? []),
     deletedIds: [...deleted],
   });
 }

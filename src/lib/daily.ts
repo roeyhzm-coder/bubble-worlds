@@ -109,10 +109,20 @@ export function applyDailyRollover(tasks: DailyTask[], today = todayKey()): Dail
   ];
 }
 
-export function todayTasks(tasks: DailyTask[], today = todayKey()): DailyTask[] {
+export function tomorrowKey(from = new Date()): string {
+  const next = new Date(from);
+  next.setDate(next.getDate() + 1);
+  return todayKey(next);
+}
+
+export function dateTasks(tasks: DailyTask[], date: string): DailyTask[] {
   return tasks
-    .filter((item) => item.date === today)
+    .filter((item) => item.date === date)
     .sort((a, b) => a.order_index - b.order_index);
+}
+
+export function todayTasks(tasks: DailyTask[], today = todayKey()): DailyTask[] {
+  return dateTasks(tasks, today);
 }
 
 export function archivedTasks(tasks: DailyTask[], today = todayKey()): DailyTask[] {
@@ -122,13 +132,17 @@ export function archivedTasks(tasks: DailyTask[], today = todayKey()): DailyTask
     .slice(0, 21);
 }
 
-export function ensureTodaySlots(tasks: DailyTask[], today = todayKey()): DailyTask[] {
-  const current = todayTasks(tasks, today);
+export function ensureDateSlots(tasks: DailyTask[], date: string): DailyTask[] {
+  const current = dateTasks(tasks, date);
   if (current.length >= DAILY_SLOT_COUNT) return tasks;
   const extras = Array.from({ length: DAILY_SLOT_COUNT - current.length }, (_, index) =>
-    emptyDailyTask(today, current.length + index),
+    emptyDailyTask(date, current.length + index),
   );
   return [...tasks, ...extras];
+}
+
+export function ensureTodaySlots(tasks: DailyTask[], today = todayKey()): DailyTask[] {
+  return ensureDateSlots(tasks, today);
 }
 
 export function bangs(count: number): string {

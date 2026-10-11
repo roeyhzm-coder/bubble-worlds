@@ -33,10 +33,11 @@ import type {
   DailyTask,
   DrillNode,
   PageLabels,
+  Success,
   TriangleType,
   WorldKind,
 } from "../types";
-import { applyDailyRollover, emptyDailyTask, ensureTodaySlots, todayTasks } from "../lib/daily";
+import { applyDailyRollover, dateTasks, emptyDailyTask, ensureDateSlots } from "../lib/daily";
 
 interface AppContextValue {
   snapshot: AppSnapshot;
@@ -93,6 +94,19 @@ interface AppContextValue {
   updateDailyTask: (id: string, patch: Partial<DailyTask>) => void;
   deleteDailyTask: (id: string) => void;
   toggleDailyTask: (id: string) => void;
+  dailyViewDate: string;
+  setDailyViewDate: (date: string) => void;
+  moveDailyTask: (id: string, date: string) => void;
+  addSuccess: (input: {
+    title: string;
+    notes?: string;
+    source_type?: Success["source_type"];
+    category_name?: string;
+  }) => string;
+  saveBubbleAsSuccess: (id: string) => string | null;
+  saveDailyAsSuccess: (id: string) => string | null;
+  updateSuccess: (id: string, patch: Partial<Success>) => void;
+  deleteSuccess: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -111,6 +125,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     | null
   >(null);
   const [focusListAdd, setFocusListAdd] = useState(0);
+  const [dailyViewDate, setDailyViewDateState] = useState(() => todayKey());
   const applyingRemote = useRef(false);
   const ignoreRemoteUntil = useRef(0);
   const snapshotRef = useRef(snapshot);
@@ -139,6 +154,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         void upsertSetting("list_views", merged.listViews);
         void upsertSetting("triangle_types", merged.triangleTypes);
         void upsertSetting("daily_tasks", merged.dailyTasks);
+        void upsertSetting("successes", merged.successes);
         return merged;
       });
       queueMicrotask(() => {
@@ -561,19 +577,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return next;
   }, []);
 
+  const setDailyViewDate = useCallback(
+    (date: string) => {
+      setDailyViewDateState(date);
+      mutate((prev) => {
+        const dailyTasks = persistDaily(ensureDateSlots(prev.dailyTasks, date));
+        return { ...prev, dailyTasks };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
   const addDailyTask = useCallback(() => {
-    const today = todayKey();
-    const id = emptyDailyTask(today, 0).id;
+    const date = dailyViewDate || todayKey();
+    const id = emptyDailyTask(date, 0).id;
     mutate((prev) => {
-      const order_index = todayTasks(prev.dailyTasks, today).length;
+      const order_index = dateTasks(prev.dailyTasks, date).length;
       const dailyTasks = persistDaily([
         ...prev.dailyTasks,
-        { ...emptyDailyTask(today, order_index), id },
+        { ...emptyDailyTask(date, order_index), id },
       ]);
       return { ...prev, dailyTasks };
     });
     return id;
-  }, [mutate, persistDaily]);
+  }, [dailyViewDate, mutate, persistDaily]);
 
   const updateDailyTask = useCallback(
     (id: string, patch: Partial<DailyTask>) => {
@@ -590,11 +617,127 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteDailyTask = useCallback(
     (id: string) => {
       mutate((prev) => {
-        const dailyTasks = persistDaily(ensureTodaySlots(prev.dailyTasks.filter((item) => item.id !== id)));
+        const removed = prev.dailyTasks.find((item) => item.id === id);
+        const dailyTasks = persistDaily(
+          ensureDateSlots(
+            prev.dailyTasks.filter((item) => item.id !== id),
+            removed?.date ?? todayKey(),
+          ),
+        );
         return { ...prev, dailyTasks };
       });
     },
     [mutate, persistDaily],
+  );
+
+  const moveDailyTask = useCallback(
+    (id: string, date: string) => {
+      mutate((prev) => {
+        const current = prev.dailyTasks.find((item) => item.id === id);
+        if (!current) return prev;
+        const from = current.date;
+        const today = todayKey();
+        const updated = prev.dailyTasks.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                date,
+                rollover_count: date > today ? 0 : item.rollover_count,
+                order_index: dateTasks(prev.dailyTasks, date).length,
+              }
+            : item,
+        );
+        const dailyTasks = persistDaily(ensureDateSlots(ensureDateSlots(updated, from), date));
+        return { ...prev, dailyTasks };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
+  const persistSuccesses = useCallback((successes: Success[]) => {
+    void upsertSetting("successes", successes);
+    return successes;
+  }, []);
+
+  const addSuccess = useCallback(
+    (input: {
+      title: string;
+      notes?: string;
+      source_type?: Success["source_type"];
+      category_name?: string;
+    }) => {
+      const title = input.title.trim();
+      const id = newId("win");
+      if (!title) return id;
+      mutate((prev) => {
+        const success: Success = {
+          id,
+          title,
+          notes: input.notes?.trim() ?? "",
+          source_type: input.source_type ?? "manual",
+          created_at: new Date().toISOString(),
+          category_name: input.category_name?.trim() ?? "",
+        };
+        const successes = persistSuccesses([success, ...prev.successes]);
+        return { ...prev, successes };
+      });
+      return id;
+    },
+    [mutate, persistSuccesses],
+  );
+
+  const saveBubbleAsSuccess = useCallback(
+    (id: string) => {
+      const bubble = snapshotRef.current.bubbles.find((item) => item.id === id);
+      if (!bubble) return null;
+      const category = snapshotRef.current.categories.find((item) => item.id === bubble.category_id);
+      return addSuccess({
+        title: bubble.title || "הצלחה",
+        notes: bubble.notes,
+        source_type: "bubble",
+        category_name: category?.name ?? "",
+      });
+    },
+    [addSuccess],
+  );
+
+  const saveDailyAsSuccess = useCallback(
+    (id: string) => {
+      const task = snapshotRef.current.dailyTasks.find((item) => item.id === id);
+      if (!task?.text.trim()) return null;
+      return addSuccess({
+        title: task.text.trim(),
+        notes: "",
+        source_type: "daily",
+        category_name: "משימות יומיות",
+      });
+    },
+    [addSuccess],
+  );
+
+  const updateSuccess = useCallback(
+    (id: string, patch: Partial<Success>) => {
+      mutate((prev) => {
+        const successes = persistSuccesses(
+          prev.successes.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+        );
+        return { ...prev, successes };
+      });
+    },
+    [mutate, persistSuccesses],
+  );
+
+  const deleteSuccess = useCallback(
+    (id: string) => {
+      const current = snapshotRef.current;
+      const deletedIds = [...new Set([...(current.deletedIds ?? []), id])];
+      const successes = persistSuccesses(current.successes.filter((item) => item.id !== id));
+      const next = { ...current, successes, deletedIds };
+      ignoreRemoteUntil.current = Date.now() + 2500;
+      setSnapshot(next);
+      saveLocal(next);
+    },
+    [persistSuccesses],
   );
 
   const toggleDailyTask = useCallback(
@@ -763,10 +906,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateDailyTask,
       deleteDailyTask,
       toggleDailyTask,
+      dailyViewDate,
+      setDailyViewDate,
+      moveDailyTask,
+      addSuccess,
+      saveBubbleAsSuccess,
+      saveDailyAsSuccess,
+      updateSuccess,
+      deleteSuccess,
     }),
     [
       addDailyTask,
       addListItem,
+      addSuccess,
       addTriangleType,
       applyStatusColor,
       breadcrumbs,
@@ -775,9 +927,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       commitCreate,
       currentTitle,
       currentWorldKind,
+      dailyViewDate,
       deleteBubble,
       deleteCategory,
       deleteDailyTask,
+      deleteSuccess,
       deleteTriangleType,
       drill,
       drillKey,
@@ -785,15 +939,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lockWorldKind,
       markToday,
       minusDay,
+      moveDailyTask,
       moveNode,
       moveTriangleType,
       page,
       requestCreate,
       resetTracking,
+      saveBubbleAsSuccess,
+      saveDailyAsSuccess,
       setPageLabels,
       setTriangleType,
       toggleDailyTask,
       snapshot,
+      updateSuccess,
       updateDailyTask,
       updateTriangleType,
       unmarkToday,

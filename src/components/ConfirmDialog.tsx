@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
+import { Portal } from "./Portal";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -19,6 +20,7 @@ export function ConfirmDialog({
   onConfirm,
 }: ConfirmDialogProps) {
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <motion.div
@@ -67,5 +69,6 @@ export function ConfirmDialog({
         </motion.div>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
