@@ -13,8 +13,46 @@ import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
 import { asSuccesses } from "./successes";
 import { asActionSteps, asTriangleTypes } from "./triangles";
 
-const url = import.meta.env.VITE_SUPABASE_URL?.trim();
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+function stripQuotes(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^["']|["']$/g, "").trim();
+}
+
+/** Accepts a JWT anon key (dropping pasted suffixes like "-Legacy") or an sb_publishable_ key. */
+export function sanitizeAnonKey(raw: string | undefined): string {
+  const value = stripQuotes(raw);
+  const jwt = value.match(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}/);
+  if (jwt) return jwt[0];
+  const publishable = value.match(/^sb_publishable_[A-Za-z0-9_-]+/);
+  return publishable ? publishable[0] : value.split(/\s/)[0] ?? "";
+}
+
+function refFromJwt(key: string): string | null {
+  const payload = key.split(".")[1];
+  if (!payload) return null;
+  try {
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/")) as string;
+    const ref = (JSON.parse(json) as { ref?: unknown }).ref;
+    return typeof ref === "string" && /^[a-z0-9]{20}$/.test(ref) ? ref : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Normalizes to https://<ref>.supabase.co, stripping trailing slashes and /rest/v1 paths. */
+export function sanitizeUrl(raw: string | undefined, key: string): string {
+  const value = stripQuotes(raw);
+  if (/^[a-z0-9]{20}$/.test(value)) return `https://${value}.supabase.co`;
+  try {
+    const parsed = new URL(value.startsWith("http") ? value : `https://${value}`);
+    return `https://${parsed.host}`;
+  } catch {
+    const ref = refFromJwt(key);
+    return ref ? `https://${ref}.supabase.co` : "";
+  }
+}
+
+const key = sanitizeAnonKey(import.meta.env.VITE_SUPABASE_ANON_KEY);
+const url = sanitizeUrl(import.meta.env.VITE_SUPABASE_URL, key);
 
 export const supabase: SupabaseClient | null =
   url && key ? createClient(url, key) : null;
@@ -134,6 +172,49 @@ export async function upsertSetting(key: string, value: unknown): Promise<void> 
 
 export async function upsertColorRoles(colorRoles: ColorRoles): Promise<void> {
   return upsertSetting("color_roles", colorRoles);
+}
+
+export interface PushResult {
+  ok: boolean;
+  categories: number;
+  bubbles: number;
+  errors: string[];
+}
+
+/** Upserts the whole local snapshot to the cloud and reports every failure. */
+export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushResult> {
+  const result: PushResult = {
+    ok: false,
+    categories: snapshot.categories.length,
+    bubbles: snapshot.bubbles.length,
+    errors: [],
+  };
+  if (!supabase) {
+    result.errors.push("הענן לא מוגדר (חסרים URL או anon key)");
+    return result;
+  }
+  const client = supabase;
+  const settings = [
+    { key: "color_roles", value: snapshot.colorRoles },
+    { key: "page_labels", value: snapshot.pageLabels },
+    { key: "list_views", value: snapshot.listViews },
+    { key: "triangle_types", value: snapshot.triangleTypes },
+    { key: "daily_tasks", value: snapshot.dailyTasks },
+    { key: "successes", value: snapshot.successes },
+  ];
+  // Categories first so bubbles never reference a missing parent row.
+  if (snapshot.categories.length) {
+    const { error } = await client.from(BW_TABLES.categories).upsert(snapshot.categories);
+    if (error) result.errors.push(`עולמות: ${error.message}`);
+  }
+  if (snapshot.bubbles.length) {
+    const { error } = await client.from(BW_TABLES.bubbles).upsert(snapshot.bubbles);
+    if (error) result.errors.push(`בועות: ${error.message}`);
+  }
+  const { error: settingsError } = await client.from(BW_TABLES.settings).upsert(settings);
+  if (settingsError) result.errors.push(`הגדרות: ${settingsError.message}`);
+  result.ok = result.errors.length === 0;
+  return result;
 }
 
 export type RemoteChangeHandler = (snapshot: AppSnapshot) => void;

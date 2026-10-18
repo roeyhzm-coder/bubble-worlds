@@ -10,13 +10,15 @@ import {
 } from "react";
 import { EMPTY_ITEM_TOOLS, PALETTE, layoutRing, newId, todayKey } from "../lib/defaults";
 import { DEFAULT_TRIANGLE_TYPES, clearTrianglePatch, trianglePatch } from "../lib/triangles";
-import { loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
+import { backupLocal, downloadBackup, loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
   deleteBubbleRemote,
   deleteCategoryRemote,
   fetchRemoteSnapshot,
   isCloudEnabled,
+  pushSnapshotToCloud,
   subscribeRealtime,
+  type PushResult,
   upsertBubble,
   upsertCategory,
   upsertColorRoles,
@@ -107,6 +109,10 @@ interface AppContextValue {
   saveDailyAsSuccess: (id: string) => string | null;
   updateSuccess: (id: string, patch: Partial<Success>) => void;
   deleteSuccess: (id: string) => void;
+  syncing: boolean;
+  lastPush: PushResult | null;
+  pushToCloud: () => Promise<PushResult>;
+  exportBackup: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -130,6 +136,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const ignoreRemoteUntil = useRef(0);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
+  const [syncing, setSyncing] = useState(false);
+  const [lastPush, setLastPush] = useState<PushResult | null>(null);
+  const pushingRef = useRef<Promise<PushResult> | null>(null);
+
+  const pushToCloud = useCallback((): Promise<PushResult> => {
+    if (pushingRef.current) return pushingRef.current;
+    setSyncing(true);
+    const current = snapshotRef.current;
+    backupLocal(current);
+    const run = pushSnapshotToCloud(current)
+      .catch(
+        (error: unknown): PushResult => ({
+          ok: false,
+          categories: current.categories.length,
+          bubbles: current.bubbles.length,
+          errors: [error instanceof Error ? error.message : String(error)],
+        }),
+      )
+      .then((result) => {
+        setLastPush(result);
+        if (!result.ok) console.warn("cloud push failed", result.errors);
+        return result;
+      })
+      .finally(() => {
+        pushingRef.current = null;
+        setSyncing(false);
+      });
+    pushingRef.current = run;
+    return run;
+  }, []);
+
+  const exportBackup = useCallback(() => {
+    backupLocal(snapshotRef.current);
+    downloadBackup(snapshotRef.current);
+  }, []);
 
   const persist = useCallback((next: AppSnapshot) => {
     saveLocal(next);
@@ -141,35 +182,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    backupLocal(snapshotRef.current);
     void (async () => {
       const remote = await fetchRemoteSnapshot();
       if (!remote || cancelled) return;
       applyingRemote.current = true;
-      setSnapshot((local) => {
-        const merged = mergeSnapshots(local, remote);
-        for (const cat of merged.categories) void upsertCategory(cat);
-        for (const bub of merged.bubbles) void upsertBubble(bub);
-        void upsertColorRoles(merged.colorRoles);
-        void upsertSetting("page_labels", merged.pageLabels);
-        void upsertSetting("list_views", merged.listViews);
-        void upsertSetting("triangle_types", merged.triangleTypes);
-        void upsertSetting("daily_tasks", merged.dailyTasks);
-        void upsertSetting("successes", merged.successes);
-        return merged;
-      });
+      // Device data wins: every local item and field survives, remote only fills gaps.
+      const merged = mergeSnapshots(snapshotRef.current, remote, "local");
+      snapshotRef.current = merged;
+      setSnapshot(merged);
+      saveLocal(merged);
       queueMicrotask(() => {
         applyingRemote.current = false;
       });
+      void pushToCloud();
     })();
-    return subscribeRealtime((remote) => {
+    const unsubscribe = subscribeRealtime((remote) => {
       if (applyingRemote.current || Date.now() < ignoreRemoteUntil.current) return;
       applyingRemote.current = true;
-      setSnapshot((local) => mergeSnapshots(local, remote));
+      setSnapshot((local) => mergeSnapshots(local, remote, "remote"));
       queueMicrotask(() => {
         applyingRemote.current = false;
       });
     });
-  }, []);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [pushToCloud]);
 
   const mutate = useCallback((updater: (prev: AppSnapshot) => AppSnapshot) => {
     ignoreRemoteUntil.current = Date.now() + 900;
@@ -914,8 +954,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveDailyAsSuccess,
       updateSuccess,
       deleteSuccess,
+      syncing,
+      lastPush,
+      pushToCloud,
+      exportBackup,
     }),
     [
+      exportBackup,
+      lastPush,
+      pushToCloud,
+      syncing,
       addDailyTask,
       addListItem,
       addSuccess,

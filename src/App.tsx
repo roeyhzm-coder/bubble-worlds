@@ -1,5 +1,5 @@
-import { Cloud, CloudOff, Plus } from "lucide-react";
-import { useState } from "react";
+import { Cloud, CloudOff, CloudUpload, Download, Loader2, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
 import { DailyTasks } from "./components/DailyTasks";
 import { EditDrawer } from "./components/EditDrawer";
 import { FocusHub } from "./components/FocusHub";
@@ -10,8 +10,41 @@ import { WorldMap } from "./components/WorldMap";
 import { useApp } from "./state/AppProvider";
 
 export default function App() {
-  const { page, setPage, cloud, requestCreate, addTriangleType, addDailyTask } = useApp();
+  const {
+    page,
+    setPage,
+    cloud,
+    requestCreate,
+    addTriangleType,
+    addDailyTask,
+    syncing,
+    lastPush,
+    pushToCloud,
+    exportBackup,
+  } = useApp();
   const [dragging, setDragging] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const handlePush = async () => {
+    if (syncing) return;
+    const result = await pushToCloud();
+    setNotice(
+      result.ok
+        ? `נדחף לענן: ${result.categories} עולמות, ${result.bubbles} בועות`
+        : `הדחיפה נכשלה: ${result.errors[0] ?? "שגיאה לא ידועה"}`,
+    );
+  };
+
+  const handleBackup = () => {
+    exportBackup();
+    setNotice("קובץ גיבוי נשמר במכשיר");
+  };
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden overflow-x-hidden bg-canvas">
@@ -20,11 +53,45 @@ export default function App() {
           <div className="text-lg font-extrabold tracking-tight text-slate-800">
             עולמות
           </div>
-          <div className="flex items-center gap-1 text-[11px] text-slate-400">
-            {cloud ? <Cloud size={12} /> : <CloudOff size={12} />}
-            {cloud ? "סנכרון בענן" : "שמירה מקומית"}
+          <div className="flex items-center gap-1.5">
+            <div
+              className={`flex items-center gap-1 text-[11px] ${
+                lastPush && !lastPush.ok ? "text-rose-500" : "text-slate-400"
+              }`}
+            >
+              {cloud ? <Cloud size={12} /> : <CloudOff size={12} />}
+              {cloud ? (lastPush && !lastPush.ok ? "שגיאת סנכרון" : "סנכרון בענן") : "שמירה מקומית"}
+            </div>
+            <button
+              type="button"
+              onClick={handleBackup}
+              className="grid h-8 w-8 place-items-center rounded-full bg-white text-slate-600 shadow-sm ring-1 ring-slate-200 active:scale-95"
+              aria-label="גיבוי לקובץ"
+              title="גיבוי לקובץ"
+            >
+              <Download size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => void handlePush()}
+              disabled={!cloud || syncing}
+              aria-busy={syncing}
+              className="flex h-8 items-center gap-1 rounded-full bg-slate-900 px-3 text-[11px] font-bold text-white shadow-sm active:scale-95 disabled:opacity-50"
+              aria-label="דחיפה ידנית לענן"
+            >
+              {syncing ? <Loader2 size={14} className="animate-spin" /> : <CloudUpload size={14} />}
+              {syncing ? "דוחף…" : "דחוף לענן"}
+            </button>
           </div>
         </div>
+        {notice && (
+          <div
+            role="status"
+            className="mx-1 mt-1 rounded-lg bg-slate-800 px-3 py-1.5 text-center text-[11px] text-white"
+          >
+            {notice}
+          </div>
+        )}
         <PageSwitcher page={page} onPage={setPage} />
       </header>
 

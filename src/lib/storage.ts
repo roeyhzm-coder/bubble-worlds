@@ -1,14 +1,7 @@
-import type { AppSnapshot, Bubble, Category } from "../types";
+import type { AppSnapshot } from "../types";
 import { mergeDailyTasks } from "./daily";
 import { EMPTY_SNAPSHOT, STORAGE_KEY, mergeSeed } from "./defaults";
 import { mergeSuccesses } from "./successes";
-
-const RECENT_MS = 5 * 60 * 1000;
-
-function isRecent(createdAt: string): boolean {
-  const time = Date.parse(createdAt);
-  return Number.isFinite(time) && Date.now() - time < RECENT_MS;
-}
 
 export function loadLocal(): AppSnapshot {
   try {
@@ -27,79 +20,113 @@ export function loadLocal(): AppSnapshot {
       deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
     });
   } catch {
+    // Keep the unreadable payload instead of letting the next save overwrite it.
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) localStorage.setItem(`${STORAGE_KEY}-corrupt-${Date.now()}`, raw);
+    } catch {
+      /* storage unavailable */
+    }
     return mergeSeed(EMPTY_SNAPSHOT);
   }
 }
 
 export function saveLocal(snapshot: AppSnapshot): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-}
-
-function overlayCategory(remote: Category, local?: Category): Category {
-  if (!local) return remote;
-  const remoteZero = remote.position_x === 0 && remote.position_y === 0;
-  return {
-    ...remote,
-    position_x: remoteZero ? local.position_x : remote.position_x,
-    position_y: remoteZero ? local.position_y : remote.position_y,
-    container_type: remote.container_type ?? local.container_type ?? null,
-  };
-}
-
-function overlayBubble(remote: Bubble, local?: Bubble): Bubble {
-  if (!local) return remote;
-  const remoteZero = remote.position_x === 0 && remote.position_y === 0;
-  return {
-    ...remote,
-    position_x: remoteZero ? local.position_x : remote.position_x,
-    position_y: remoteZero ? local.position_y : remote.position_y,
-    container_type: remote.container_type ?? local.container_type ?? null,
-    triangle_id: remote.triangle_id !== undefined ? remote.triangle_id : local.triangle_id,
-    due_at: remote.due_at ?? local.due_at ?? null,
-    due_label: remote.due_label || local.due_label || "",
-    action_done: remote.action_done || local.action_done,
-    action_steps: remote.action_steps?.length ? remote.action_steps : local.action_steps ?? [],
-  };
-}
-
-export function mergeSnapshots(local: AppSnapshot, remote: AppSnapshot): AppSnapshot {
-  const deleted = new Set([...(local.deletedIds ?? []), ...(remote.deletedIds ?? [])]);
-  const localCats = new Map(local.categories.map((item) => [item.id, item]));
-  const localBubs = new Map(local.bubbles.map((item) => [item.id, item]));
-  const remoteCatIds = new Set(remote.categories.map((item) => item.id));
-  const remoteBubIds = new Set(remote.bubbles.map((item) => item.id));
-
-  const categories = [
-    ...remote.categories
-      .filter((item) => !deleted.has(item.id))
-      .map((item) => overlayCategory(item, localCats.get(item.id))),
-    ...local.categories.filter(
-      (item) => !remoteCatIds.has(item.id) && !deleted.has(item.id) && isRecent(item.created_at),
-    ),
-  ];
-  const bubbles = [
-    ...remote.bubbles
-      .filter((item) => !deleted.has(item.id))
-      .map((item) => overlayBubble(item, localBubs.get(item.id))),
-    ...local.bubbles.filter(
-      (item) => !remoteBubIds.has(item.id) && !deleted.has(item.id) && isRecent(item.created_at),
-    ),
-  ];
-
-  const types = new Map((remote.triangleTypes ?? []).map((item) => [item.id, item]));
-  for (const type of local.triangleTypes ?? []) {
-    if (!types.has(type.id)) types.set(type.id, type);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn("local save failed", error);
   }
+}
+
+export const BACKUP_KEY = `${STORAGE_KEY}-backup`;
+
+/** Stores a full copy of the device snapshot before any cloud merge touches it. */
+export function backupLocal(snapshot: AppSnapshot): void {
+  try {
+    localStorage.setItem(
+      BACKUP_KEY,
+      JSON.stringify({ saved_at: new Date().toISOString(), snapshot }),
+    );
+  } catch (error) {
+    console.warn("local backup failed", error);
+  }
+}
+
+/** Downloads the snapshot as a JSON file the user can keep outside the browser. */
+export function downloadBackup(snapshot: AppSnapshot): void {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = `bubble-worlds-backup-${stamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
+
+export type MergePreference = "local" | "remote";
+
+function fillBlanks<T extends object>(primary: T, secondary?: T): T {
+  if (!secondary) return primary;
+  const out = { ...secondary, ...primary } as Record<string, unknown>;
+  const fallback = secondary as Record<string, unknown>;
+  for (const [field, value] of Object.entries(out)) {
+    if (value === undefined || value === null) out[field] = fallback[field] ?? value;
+  }
+  return out as T;
+}
+
+function mergeById<T extends { id: string }>(
+  local: T[],
+  remote: T[],
+  deleted: Set<string>,
+  prefer: MergePreference,
+): T[] {
+  const remoteById = new Map(remote.map((item) => [item.id, item]));
+  const localIds = new Set(local.map((item) => item.id));
+  const merged = local
+    .filter((item) => !deleted.has(item.id))
+    .map((item) => {
+      const other = remoteById.get(item.id);
+      return prefer === "local" ? fillBlanks(item, other) : other ? fillBlanks(other, item) : item;
+    });
+  for (const item of remote) {
+    if (!localIds.has(item.id) && !deleted.has(item.id)) merged.push(item);
+  }
+  return merged;
+}
+
+/**
+ * Never drops local data: every local category, bubble, task, success and setting survives.
+ * Remote-only items are added. `prefer` only decides whose field values win on shared ids:
+ * "local" (default, startup + manual push) or "remote" (live updates from another device).
+ */
+export function mergeSnapshots(
+  local: AppSnapshot,
+  remote: AppSnapshot,
+  prefer: MergePreference = "local",
+): AppSnapshot {
+  const deleted = new Set(local.deletedIds ?? []);
+  const pick = <V extends object>(l: V, r: V): V =>
+    prefer === "local" ? { ...r, ...l } : { ...l, ...r };
+  // mergeDailyTasks / mergeSuccesses let their second argument win on shared ids.
+  const [dailyA, dailyB] =
+    prefer === "local" ? [remote.dailyTasks, local.dailyTasks] : [local.dailyTasks, remote.dailyTasks];
+  const [winsA, winsB] =
+    prefer === "local" ? [remote.successes, local.successes] : [local.successes, remote.successes];
 
   return mergeSeed({
-    categories,
-    bubbles,
-    colorRoles: { ...local.colorRoles, ...remote.colorRoles },
-    pageLabels: { ...local.pageLabels, ...remote.pageLabels },
-    listViews: { ...local.listViews, ...remote.listViews },
-    triangleTypes: [...types.values()],
-    dailyTasks: mergeDailyTasks(local.dailyTasks ?? [], remote.dailyTasks ?? []),
-    successes: mergeSuccesses(local.successes ?? [], remote.successes ?? []),
+    categories: mergeById(local.categories, remote.categories, deleted, prefer),
+    bubbles: mergeById(local.bubbles, remote.bubbles, deleted, prefer),
+    colorRoles: pick(local.colorRoles, remote.colorRoles),
+    pageLabels: pick(local.pageLabels, remote.pageLabels),
+    listViews: pick(local.listViews, remote.listViews),
+    triangleTypes: mergeById(local.triangleTypes ?? [], remote.triangleTypes ?? [], new Set(), prefer),
+    dailyTasks: mergeDailyTasks(dailyA ?? [], dailyB ?? []).filter((item) => !deleted.has(item.id)),
+    successes: mergeSuccesses(winsA ?? [], winsB ?? []).filter((item) => !deleted.has(item.id)),
     deletedIds: [...deleted],
   });
 }
