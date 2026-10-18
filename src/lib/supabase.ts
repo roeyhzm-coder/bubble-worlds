@@ -38,16 +38,21 @@ function refFromJwt(key: string): string | null {
   }
 }
 
-/** Normalizes to https://<ref>.supabase.co, stripping trailing slashes and /rest/v1 paths. */
+/**
+ * Normalizes to https://<ref>.supabase.co, stripping trailing slashes and /rest/v1 paths.
+ * When the anon key names a different project ref than a *.supabase.co URL (a typo in the
+ * env var), the key's ref wins because the key only authenticates against its own project.
+ */
 export function sanitizeUrl(raw: string | undefined, key: string): string {
   const value = stripQuotes(raw);
-  if (/^[a-z0-9]{20}$/.test(value)) return `https://${value}.supabase.co`;
+  const keyRef = refFromJwt(key);
+  if (/^[a-z0-9]{20}$/.test(value)) return `https://${keyRef ?? value}.supabase.co`;
   try {
     const parsed = new URL(value.startsWith("http") ? value : `https://${value}`);
+    if (keyRef && parsed.host.endsWith(".supabase.co")) return `https://${keyRef}.supabase.co`;
     return `https://${parsed.host}`;
   } catch {
-    const ref = refFromJwt(key);
-    return ref ? `https://${ref}.supabase.co` : "";
+    return keyRef ? `https://${keyRef}.supabase.co` : "";
   }
 }
 
