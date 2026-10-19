@@ -1,4 +1,4 @@
-import { Moon, Plus, Sun, Trash2, Trophy } from "lucide-react";
+import { Moon, Plus, Sun, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { archivedTasks, bangs, dateTasks, tomorrowKey } from "../lib/daily";
 import { todayKey } from "../lib/defaults";
@@ -14,10 +14,8 @@ export function DailyTasks() {
     dailyViewDate,
     setDailyViewDate,
     moveDailyTask,
-    saveDailyAsSuccess,
   } = useApp();
   const [showArchive, setShowArchive] = useState(false);
-  const [savedId, setSavedId] = useState<string | null>(null);
   const today = todayKey();
   const tomorrow = tomorrowKey();
   const planningTomorrow = dailyViewDate === tomorrow;
@@ -105,19 +103,6 @@ export function DailyTasks() {
                     item.completed ? "line-through" : ""
                   }`}
                 />
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (saveDailyAsSuccess(item.id)) setSavedId(item.id);
-                  }}
-                  className={`grid h-10 w-8 shrink-0 place-items-center ${
-                    savedId === item.id ? "text-amber-500" : "text-amber-400"
-                  }`}
-                  aria-label="שמור כהצלחה"
-                >
-                  <Trophy size={15} />
-                </button>
                 <button
                   type="button"
                   onClick={(e) => {

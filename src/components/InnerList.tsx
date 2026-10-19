@@ -1,10 +1,17 @@
-import { ChevronDown, ChevronUp, Plus, Trash2, Trophy } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { findTriangle } from "../lib/triangles";
 import { useApp } from "../state/AppProvider";
 import type { Bubble } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { TriangleGlyph, TrianglePicker, TypeTools } from "./ItemTools";
+import {
+  CompletionBar,
+  NoteIndicator,
+  NotesField,
+  TriangleGlyph,
+  TrianglePicker,
+  TypeTools,
+} from "./ItemTools";
 
 export function InnerList({ items }: { items: Bubble[] }) {
   const {
@@ -17,12 +24,10 @@ export function InnerList({ items }: { items: Bubble[] }) {
     setTriangleType,
     focusListAdd,
     drillKey,
-    saveBubbleAsSuccess,
   } = useApp();
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [savedId, setSavedId] = useState<string | null>(null);
   const addRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -105,9 +110,11 @@ export function InnerList({ items }: { items: Bubble[] }) {
                   onClick={() => toggle(item.id)}
                   className="flex min-h-12 min-w-0 flex-1 items-center gap-1 text-start"
                 >
-                  <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-slate-800">
+                  <span className="min-w-0 truncate text-[15px] font-semibold text-slate-800">
                     {item.title || "ללא שם"}
                   </span>
+                  <NoteIndicator notes={item.notes} />
+                  <span className="flex-1" />
                   {open ? (
                     <ChevronUp size={16} className="shrink-0 text-slate-400" />
                   ) : (
@@ -128,19 +135,6 @@ export function InnerList({ items }: { items: Bubble[] }) {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (saveBubbleAsSuccess(item.id)) setSavedId(item.id);
-                  }}
-                  className={`grid h-10 w-8 shrink-0 place-items-center ${
-                    savedId === item.id ? "text-amber-500" : "text-amber-400"
-                  }`}
-                  aria-label="שמור כהצלחה"
-                >
-                  <Trophy size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
                     setPendingDelete(item.id);
                   }}
                   className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
@@ -149,29 +143,23 @@ export function InnerList({ items }: { items: Bubble[] }) {
                   <Trash2 size={15} />
                 </button>
               </div>
+              {!plain && <CompletionBar item={item} onDelete={() => setPendingDelete(item.id)} />}
               {open && (
                 <div className="border-t border-slate-100">
                   <div className="px-3 pt-2">
                     <input
                       value={item.title}
                       onChange={(e) => updateBubble(item.id, { title: e.target.value })}
+                      placeholder="שם הפריט"
+                      aria-label="שם הפריט"
                       className="mb-2 h-10 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold outline-none"
                     />
                     <TrianglePicker
                       value={item.triangle_id}
                       onChange={(id) => setTriangleType(item.id, id)}
                     />
-                    {plain && (
-                      <textarea
-                        value={item.notes}
-                        onChange={(e) => updateBubble(item.id, { notes: e.target.value })}
-                        rows={3}
-                        placeholder="הערה חופשית…"
-                        className="mt-2 w-full resize-none rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none"
-                      />
-                    )}
                   </div>
-                  {!plain && <TypeTools item={item} />}
+                  {plain ? <NotesField item={item} /> : <TypeTools item={item} />}
                 </div>
               )}
             </div>

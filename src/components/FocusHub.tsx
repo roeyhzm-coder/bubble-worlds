@@ -1,17 +1,16 @@
-import { ChevronDown, ChevronUp, Trash2, Trophy } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { dueText } from "../lib/triangles";
-import { trackingProgress } from "../lib/tracking";
+import { isItemCompleted, trackingProgress } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { TypeTools } from "./ItemTools";
+import { CompletionBar, NoteIndicator, TypeTools } from "./ItemTools";
 import { ProgressRing } from "./ProgressRing";
 
 export function FocusHub() {
   const { snapshot, setPage, setDrill } = useApp();
   const [openId, setOpenId] = useState<string | null>(null);
-  const [savedId, setSavedId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const groups = useMemo(() => {
@@ -20,7 +19,7 @@ export function FocusHub() {
       .sort((a, b) => a.order_index - b.order_index)
       .map((type) => ({
         type,
-        items: snapshot.bubbles.filter((item) => item.triangle_id === type.id),
+        items: snapshot.bubbles.filter((item) => item.triangle_id === type.id && !item.archived),
       }))
       .filter((group) => group.items.length > 0);
   }, [snapshot.bubbles, snapshot.triangleTypes]);
@@ -62,9 +61,7 @@ export function FocusHub() {
                   item={item}
                   type={type}
                   open={openId === item.id}
-                  saved={savedId === item.id}
                   onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
-                  onSave={() => setSavedId(item.id)}
                   onDelete={() => setPendingDelete(item.id)}
                   onSource={() => {
                     setDrill(
@@ -111,25 +108,22 @@ function HubCard({
   item,
   type,
   open,
-  saved,
   onToggle,
-  onSave,
   onDelete,
   onSource,
 }: {
   item: Bubble;
   type: TriangleType;
   open: boolean;
-  saved: boolean;
   onToggle: () => void;
-  onSave: () => void;
   onDelete: () => void;
   onSource: () => void;
 }) {
-  const { saveBubbleAsSuccess } = useApp();
+  const { updateBubble } = useApp();
   const progress = trackingProgress(item);
+  const completed = isItemCompleted(item, type.template);
   return (
-    <div className="rounded-2xl bg-white">
+    <div className={`rounded-2xl bg-white ${completed ? "ring-2 ring-amber-300" : ""}`}>
       <div className="flex min-h-12 w-full items-center gap-1 px-2">
       <button
         type="button"
@@ -157,7 +151,10 @@ function HubCard({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-bold text-slate-800">{item.title || "ללא שם"}</div>
+          <div className="flex items-center gap-1">
+            <span className="truncate text-[14px] font-bold text-slate-800">{item.title || "ללא שם"}</span>
+            <NoteIndicator notes={item.notes} />
+          </div>
           {type.template === "action" && dueText(item) && (
             <div className="truncate text-[11px] font-bold text-emerald-600">{dueText(item)}</div>
           )}
@@ -172,19 +169,6 @@ function HubCard({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            if (saveBubbleAsSuccess(item.id)) onSave();
-          }}
-          className={`grid h-10 w-8 shrink-0 place-items-center ${
-            saved ? "text-amber-500" : "text-amber-400"
-          }`}
-          aria-label="שמור כהצלחה"
-        >
-          <Trophy size={15} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
             onDelete();
           }}
           className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
@@ -193,8 +177,18 @@ function HubCard({
           <Trash2 size={15} />
         </button>
       </div>
+      <CompletionBar item={item} onDelete={onDelete} />
       {open && (
         <>
+          <div className="px-3 pb-1">
+            <input
+              value={item.title}
+              onChange={(e) => updateBubble(item.id, { title: e.target.value })}
+              placeholder="שם הפריט"
+              aria-label="שם הפריט"
+              className="h-10 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none"
+            />
+          </div>
           <button
             type="button"
             onClick={onSource}

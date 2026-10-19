@@ -3,6 +3,7 @@ import {
   BW_TABLES,
   type AppSnapshot,
   type Bubble,
+  type BubbleExtras,
   type Category,
   type ColorRoles,
   type PageLabels,
@@ -103,7 +104,53 @@ function normalizeCategory(row: Category): Category {
   return { ...row, container_type: asWorldKind(row.container_type) };
 }
 
-function normalizeBubble(row: RemoteBubble): Bubble {
+const EXTRA_KEYS = ["challenge_done", "done_offset", "streak_offset", "archived"] as const;
+
+/** Row payload for bw_bubbles: extras live in the bubble_extras setting, not in table columns. */
+export function toBubbleRow(bubble: Bubble): Omit<Bubble, keyof BubbleExtras> {
+  const row: Record<string, unknown> = { ...bubble };
+  for (const key of EXTRA_KEYS) delete row[key];
+  return row as Omit<Bubble, keyof BubbleExtras>;
+}
+
+/** Collects every non-default extra field, keyed by bubble id. */
+export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExtras> {
+  const out: Record<string, BubbleExtras> = {};
+  for (const bubble of bubbles) {
+    const extras: BubbleExtras = {};
+    if (bubble.challenge_done) extras.challenge_done = true;
+    if (bubble.done_offset) extras.done_offset = bubble.done_offset;
+    if (bubble.streak_offset) extras.streak_offset = bubble.streak_offset;
+    if (bubble.archived) extras.archived = true;
+    if (Object.keys(extras).length) out[bubble.id] = extras;
+  }
+  return out;
+}
+
+const EXTRA_DEFAULTS: Required<BubbleExtras> = {
+  challenge_done: false,
+  done_offset: 0,
+  streak_offset: 0,
+  archived: false,
+};
+
+function asExtras(value: unknown): Record<string, BubbleExtras> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, BubbleExtras> = {};
+  for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const rec = raw as Record<string, unknown>;
+    out[id] = {
+      challenge_done: Boolean(rec.challenge_done),
+      done_offset: typeof rec.done_offset === "number" ? rec.done_offset : 0,
+      streak_offset: typeof rec.streak_offset === "number" ? rec.streak_offset : 0,
+      archived: Boolean(rec.archived),
+    };
+  }
+  return out;
+}
+
+function normalizeBubble(row: RemoteBubble, extras?: BubbleExtras): Bubble {
   return {
     ...row,
     title: row.title ?? "",
@@ -115,6 +162,7 @@ function normalizeBubble(row: RemoteBubble): Bubble {
     due_label: typeof row.due_label === "string" ? row.due_label : "",
     action_done: Boolean(row.action_done),
     action_steps: asActionSteps(row.action_steps),
+    ...extras,
   };
 }
 
@@ -132,9 +180,13 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
   const map = Object.fromEntries(
     (settings.data ?? []).map((row: { key: string; value: unknown }) => [row.key, row.value]),
   );
+  // Without the setting row, extras stay undefined so merging keeps the local values.
+  const extras = map.bubble_extras === undefined ? null : asExtras(map.bubble_extras);
   return {
     categories: ((cats.data ?? []) as Category[]).map(normalizeCategory),
-    bubbles: ((bubs.data ?? []) as RemoteBubble[]).map(normalizeBubble),
+    bubbles: ((bubs.data ?? []) as RemoteBubble[]).map((row) =>
+      normalizeBubble(row, extras ? (extras[row.id] ?? EXTRA_DEFAULTS) : undefined),
+    ),
     colorRoles: asRoles(map.color_roles),
     pageLabels: asPageLabels(map.page_labels),
     listViews: asListViews(map.list_views),
@@ -153,7 +205,7 @@ export async function upsertCategory(category: Category): Promise<void> {
 
 export async function upsertBubble(bubble: Bubble): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.from(BW_TABLES.bubbles).upsert(bubble);
+  const { error } = await supabase.from(BW_TABLES.bubbles).upsert(toBubbleRow(bubble));
   if (error) console.warn("upsert bubble", error.message);
 }
 
@@ -206,6 +258,7 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
     { key: "triangle_types", value: snapshot.triangleTypes },
     { key: "daily_tasks", value: snapshot.dailyTasks },
     { key: "successes", value: snapshot.successes },
+    { key: "bubble_extras", value: collectBubbleExtras(snapshot.bubbles) },
   ];
   // Categories first so bubbles never reference a missing parent row.
   if (snapshot.categories.length) {
@@ -213,7 +266,7 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
     if (error) result.errors.push(`עולמות: ${error.message}`);
   }
   if (snapshot.bubbles.length) {
-    const { error } = await client.from(BW_TABLES.bubbles).upsert(snapshot.bubbles);
+    const { error } = await client.from(BW_TABLES.bubbles).upsert(snapshot.bubbles.map(toBubbleRow));
     if (error) result.errors.push(`בועות: ${error.message}`);
   }
   const { error: settingsError } = await client.from(BW_TABLES.settings).upsert(settings);

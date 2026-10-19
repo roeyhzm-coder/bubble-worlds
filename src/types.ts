@@ -66,7 +66,18 @@ export interface Bubble {
   due_label: string;
   action_done: boolean;
   action_steps: ActionStep[];
+  /** Manual "challenge finished" toggle (tracking + thought templates). */
+  challenge_done?: boolean;
+  /** Manual correction added to the counted check-in days. */
+  done_offset?: number;
+  /** Manual correction added to the computed streak. */
+  streak_offset?: number;
+  /** Saved to the successes vault and hidden from active lists (data kept). */
+  archived?: boolean;
 }
+
+/** Item fields synced via the `bubble_extras` setting instead of bw_bubbles columns. */
+export type BubbleExtras = Pick<Bubble, "challenge_done" | "done_offset" | "streak_offset" | "archived">;
 
 export type ColorRoles = Record<BubbleStatus, string>;
 

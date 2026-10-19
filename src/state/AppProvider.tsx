@@ -12,6 +12,7 @@ import { EMPTY_ITEM_TOOLS, PALETTE, layoutRing, newId, todayKey } from "../lib/d
 import { DEFAULT_TRIANGLE_TYPES, clearTrianglePatch, trianglePatch } from "../lib/triangles";
 import { backupLocal, downloadBackup, loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
+  collectBubbleExtras,
   deleteBubbleRemote,
   deleteCategoryRemote,
   fetchRemoteSnapshot,
@@ -24,7 +25,7 @@ import {
   upsertColorRoles,
   upsertSetting,
 } from "../lib/supabase";
-import { markDone, removeDate, removeLastDay } from "../lib/tracking";
+import { markDone, removeDate, removeLastDay, toggleDate } from "../lib/tracking";
 import type {
   AppSnapshot,
   Breadcrumb,
@@ -87,6 +88,7 @@ interface AppContextValue {
   unmarkToday: (id: string) => void;
   minusDay: (id: string) => void;
   resetTracking: (id: string) => void;
+  toggleTrackingDate: (id: string, date: string) => void;
   setTriangleType: (id: string, triangleId: string | null) => void;
   addTriangleType: () => string;
   updateTriangleType: (id: string, patch: Partial<TriangleType>) => void;
@@ -106,6 +108,7 @@ interface AppContextValue {
     category_name?: string;
   }) => string;
   saveBubbleAsSuccess: (id: string) => string | null;
+  archiveBubbleAsSuccess: (id: string) => string | null;
   saveDailyAsSuccess: (id: string) => string | null;
   updateSuccess: (id: string, patch: Partial<Success>) => void;
   deleteSuccess: (id: string) => void;
@@ -116,6 +119,8 @@ interface AppContextValue {
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
+
+const EXTRA_PATCH_KEYS = ["challenge_done", "done_offset", "streak_offset", "archived"] as const;
 
 function clampPos(n: number): number {
   return Math.min(92, Math.max(8, n));
@@ -406,6 +411,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         );
         const next = { ...prev, bubbles };
         const updated = bubbles.find((b) => b.id === id);
+        if (EXTRA_PATCH_KEYS.some((key) => key in patch)) {
+          void upsertSetting("bubble_extras", collectBubbleExtras(bubbles));
+        }
         if (updated) void upsertBubble(updated);
         return next;
       });
@@ -525,7 +533,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const resetTracking = useCallback(
     (id: string) => {
-      updateBubble(id, { tracking_history: [] });
+      updateBubble(id, { tracking_history: [], done_offset: 0, streak_offset: 0 });
+    },
+    [updateBubble],
+  );
+
+  const toggleTrackingDate = useCallback(
+    (id: string, date: string) => {
+      const bubble = snapshotRef.current.bubbles.find((b) => b.id === id);
+      if (!bubble || date > todayKey()) return;
+      updateBubble(id, { tracking_history: toggleDate(bubble.tracking_history, date) });
     },
     [updateBubble],
   );
@@ -741,6 +758,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [addSuccess],
   );
 
+  /** Saves a completed item to the vault and hides it from active lists; its data is kept. */
+  const archiveBubbleAsSuccess = useCallback(
+    (id: string) => {
+      const successId = saveBubbleAsSuccess(id);
+      if (successId) updateBubble(id, { archived: true });
+      return successId;
+    },
+    [saveBubbleAsSuccess, updateBubble],
+  );
+
   const saveDailyAsSuccess = useCallback(
     (id: string) => {
       const task = snapshotRef.current.dailyTasks.find((item) => item.id === id);
@@ -896,10 +923,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (drill.kind === "root") return [];
     if (drill.kind === "category") {
       return snapshot.bubbles.filter(
-        (b) => b.category_id === drill.id && b.parent_bubble_id === null,
+        (b) => b.category_id === drill.id && b.parent_bubble_id === null && !b.archived,
       );
     }
-    return snapshot.bubbles.filter((b) => b.parent_bubble_id === drill.id);
+    return snapshot.bubbles.filter((b) => b.parent_bubble_id === drill.id && !b.archived);
   }, [drill, snapshot.bubbles]);
 
   const value = useMemo<AppContextValue>(
@@ -937,6 +964,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unmarkToday,
       minusDay,
       resetTracking,
+      toggleTrackingDate,
       setTriangleType,
       addTriangleType,
       updateTriangleType,
@@ -951,6 +979,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       moveDailyTask,
       addSuccess,
       saveBubbleAsSuccess,
+      archiveBubbleAsSuccess,
       saveDailyAsSuccess,
       updateSuccess,
       deleteSuccess,
@@ -993,7 +1022,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       page,
       requestCreate,
       resetTracking,
+      toggleTrackingDate,
       saveBubbleAsSuccess,
+      archiveBubbleAsSuccess,
       saveDailyAsSuccess,
       setPageLabels,
       setTriangleType,
