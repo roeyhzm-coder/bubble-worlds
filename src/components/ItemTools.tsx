@@ -7,6 +7,8 @@ import {
   hasDate,
   isItemCompleted,
   itemStreak,
+  logSessionOutcome,
+  sessionOpportunities,
   sessionProgress,
   trackingProgress,
   weeklyProgress,
@@ -181,7 +183,7 @@ function CompleteToggle({ item, label }: { item: Bubble; label: string }) {
         on ? "bg-emerald-500 text-white" : "bg-emerald-50 text-emerald-700"
       }`}
     >
-      {on ? `✓ ${label.replace(/\s*✓$/, "")} · בטל` : label}
+      {on ? `✓ ${label.replace(/^\s*✓\s*|\s*✓$/g, "")} · בטל` : label}
     </button>
   );
 }
@@ -476,86 +478,148 @@ export function SessionBadge({ item, color, size = 40 }: { item: Bubble; color: 
   );
 }
 
+/** Stacked label + numeric input that fits two-per-row in the counter panel. */
+function CompactNumberField({
+  label,
+  value,
+  min,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  onCommit: (next: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+  return (
+    <label className="flex min-w-0 flex-col gap-0.5 rounded-xl bg-violet-50/60 px-2.5 py-1.5">
+      <span className="truncate text-[10px] font-extrabold text-violet-700/80">{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={100000}
+        inputMode="numeric"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const next = Math.round(Number(e.target.value));
+          if (e.target.value === "" || !Number.isFinite(next) || next < min) return;
+          onCommit(Math.min(100000, next));
+        }}
+        className="h-8 w-full min-w-0 bg-transparent text-end text-base font-extrabold text-slate-800 outline-none"
+        aria-label={label}
+      />
+    </label>
+  );
+}
+
+/** Purple opportunity tracker: counts taken chances toward a goal, no dates or streaks. */
 function CounterTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble } = useApp();
   const [confirmReset, setConfirmReset] = useState(false);
   const progress = sessionProgress(item);
-  const [customTarget, setCustomTarget] = useState(String(progress.target));
-
-  useEffect(() => {
-    setCustomTarget(String(progress.target));
-  }, [progress.target]);
+  const odds = sessionOpportunities(item);
+  const ringColor = color || COUNTER_COLOR;
 
   const setCount = (next: number) =>
     updateBubble(item.id, { session_count: Math.min(100000, Math.max(0, Math.round(next))) });
-  const applyCustomTarget = (raw: string) => {
-    setCustomTarget(raw);
-    const next = Math.round(Number(raw));
-    if (!Number.isFinite(next) || next < 1) return;
-    updateBubble(item.id, { session_target: Math.min(100000, next) });
-  };
 
   return (
-    <div className="space-y-2.5 border-t border-slate-100 px-3 py-3">
+    <div className="space-y-3 border-t border-violet-100 px-3 py-3">
       <div className="flex items-center gap-3">
-        <div className="relative grid h-12 w-12 place-items-center">
-          <ProgressRing ratio={progress.ratio} size={48} color={color} className="absolute inset-0" />
-          <span className="text-[10px] font-extrabold text-slate-700">{progress.done}</span>
+        <div className="relative grid h-16 w-16 shrink-0 place-items-center">
+          <ProgressRing ratio={progress.ratio} size={64} color={ringColor} className="absolute inset-0" />
+          <span className="text-sm font-extrabold" style={{ color: COUNTER_COLOR }}>
+            {progress.done}
+          </span>
         </div>
-        <div className="min-w-0 flex-1 text-sm font-extrabold text-slate-700">
-          {progress.done} / {progress.target} פעמים
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="text-base font-extrabold text-slate-800">
+            {progress.done} / {progress.target} פעמים
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-lg bg-violet-50 px-2 py-0.5 text-[11px] font-extrabold text-violet-700">
+              {odds.total > 0
+                ? `${odds.taken}/${odds.total} הזדמנויות · ${odds.accuracy}%`
+                : "עוד לא נרשמו יציאות"}
+            </span>
+          </div>
+          {odds.recent.length > 0 && (
+            <div className="flex gap-1" aria-label="10 היציאות האחרונות">
+              {odds.recent.map((outcome, index) => (
+                <span
+                  key={index}
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    outcome === "done" ? "" : "border border-slate-300 bg-white"
+                  }`}
+                  style={outcome === "done" ? { background: COUNTER_COLOR } : undefined}
+                  title={outcome === "done" ? "ביצעתי" : "לא ביצעתי"}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setCount(progress.done + 1)}
-        className="flex h-12 w-full items-center justify-center gap-1 rounded-xl text-sm font-extrabold text-white shadow-soft"
-        style={{ background: COUNTER_COLOR }}
-      >
-        ✓ ביצעתי הפעם (+1)
-      </button>
-      <button
-        type="button"
-        disabled={progress.done === 0}
-        onClick={() => setCount(progress.done - 1)}
-        className="h-11 w-full rounded-xl bg-violet-50 text-xs font-extrabold text-violet-700 disabled:opacity-40"
-      >
-        יצאתי ולא ביצעתי (-1)
-      </button>
-
-      <NumberField label="ספירה נוכחית" value={progress.done} onCommit={setCount} />
-
-      <div className="text-[11px] font-bold text-slate-400">יעד פעמים</div>
-      <div className="flex flex-wrap gap-1.5">
-        {SESSION_PRESETS.map((n) => (
-          <button
-            key={n}
-            type="button"
-            onClick={() => updateBubble(item.id, { session_target: n })}
-            className={`h-8 rounded-lg px-2.5 text-xs font-bold ${
-              progress.target === n ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-600"
-            }`}
-          >
-            {n}
-          </button>
-        ))}
+      <div className="grid grid-cols-1 gap-1.5">
+        <button
+          type="button"
+          onClick={() => updateBubble(item.id, logSessionOutcome(item, "done"))}
+          className="flex h-12 w-full items-center justify-center gap-1 rounded-xl text-sm font-extrabold text-white shadow-soft active:scale-[0.99]"
+          style={{ background: COUNTER_COLOR }}
+        >
+          ✓ יצאתי וביצעתי (+1)
+        </button>
+        <button
+          type="button"
+          onClick={() => updateBubble(item.id, logSessionOutcome(item, "missed"))}
+          className="h-11 w-full rounded-xl border border-rose-200 bg-white text-xs font-extrabold text-rose-600"
+        >
+          יצאתי ולא ביצעתי (-1)
+        </button>
       </div>
-      <label className="flex h-11 items-center gap-2 rounded-xl bg-slate-50 px-3">
-        <span className="shrink-0 text-[11px] font-extrabold text-slate-500">יעד מותאם אישית</span>
-        <input
-          type="number"
-          min={1}
-          max={100000}
-          inputMode="numeric"
-          value={customTarget}
-          onChange={(e) => applyCustomTarget(e.target.value)}
-          className="h-10 min-w-0 flex-1 bg-transparent text-end text-sm font-extrabold text-slate-800 outline-none"
-          aria-label="יעד מותאם אישית"
-        />
-      </label>
 
-      <CompleteToggle item={item} label="סיימתי את האתגר ✓" />
+      <div className="space-y-1.5 rounded-xl border border-violet-100 p-2">
+        <div className="text-[11px] font-extrabold text-violet-700">הגדרת יעד פעמים</div>
+        <div className="flex flex-wrap gap-1.5">
+          {SESSION_PRESETS.map((n) => {
+            const active = progress.target === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => updateBubble(item.id, { session_target: n })}
+                aria-pressed={active}
+                className={`h-8 rounded-lg px-2.5 text-xs font-bold ${
+                  active ? "text-white" : "bg-violet-50 text-violet-700"
+                }`}
+                style={active ? { background: COUNTER_COLOR } : undefined}
+              >
+                {n} פעמים
+              </button>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <CompactNumberField
+            label="יעד מותאם אישית"
+            value={progress.target}
+            min={1}
+            onCommit={(next) => updateBubble(item.id, { session_target: next })}
+          />
+          <CompactNumberField
+            label="עריכת מונה נוכחי"
+            value={progress.done}
+            min={0}
+            onCommit={setCount}
+          />
+        </div>
+      </div>
+
+      <CompleteToggle item={item} label="✓ סיימתי את האתגר" />
 
       <button
         type="button"
@@ -568,11 +632,16 @@ function CounterTools({ item, color }: { item: Bubble; color: string }) {
       <ConfirmDialog
         open={confirmReset}
         title="לאפס את המונה?"
-        body="הספירה תחזור ל-0. היעד וההערות נשמרים."
+        body="הספירה וההיסטוריה של היציאות יתאפסו. היעד וההערות נשמרים."
         confirmLabel="איפוס"
         onCancel={() => setConfirmReset(false)}
         onConfirm={() => {
-          setCount(0);
+          updateBubble(item.id, {
+            session_count: 0,
+            session_taken: 0,
+            session_missed: 0,
+            session_log: [],
+          });
           setConfirmReset(false);
         }}
       />

@@ -24,7 +24,11 @@ export interface TriangleType {
   color: string;
   template: ToolTemplate;
   order_index: number;
+  /** Set once the legacy "tracking" → "counter" auto-upgrade ran, so a later manual choice sticks. */
+  counter_migrated?: boolean;
 }
+
+export type SessionOutcome = "done" | "missed";
 
 export interface ActionStep {
   id: string;
@@ -78,12 +82,26 @@ export interface Bubble {
   session_count?: number;
   /** Counter template: goal for session_count. */
   session_target?: number;
+  /** Counter template: total outings logged as taken (+1). */
+  session_taken?: number;
+  /** Counter template: total outings logged as missed (-1). */
+  session_missed?: number;
+  /** Counter template: most recent outings, oldest first (capped). */
+  session_log?: SessionOutcome[];
 }
 
 /** Item fields synced via the `bubble_extras` setting instead of bw_bubbles columns. */
 export type BubbleExtras = Pick<
   Bubble,
-  "challenge_done" | "done_offset" | "streak_offset" | "archived" | "session_count" | "session_target"
+  | "challenge_done"
+  | "done_offset"
+  | "streak_offset"
+  | "archived"
+  | "session_count"
+  | "session_target"
+  | "session_taken"
+  | "session_missed"
+  | "session_log"
 >;
 
 export type ColorRoles = Record<BubbleStatus, string>;

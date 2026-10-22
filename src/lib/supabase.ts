@@ -12,6 +12,7 @@ import {
 import { applyDailyRollover, asDailyTasks } from "./daily";
 import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
 import { asSuccesses } from "./successes";
+import { asSessionLog } from "./tracking";
 import { asActionSteps, asTriangleTypes } from "./triangles";
 
 function stripQuotes(value: string | undefined): string {
@@ -111,6 +112,9 @@ const EXTRA_KEYS = [
   "archived",
   "session_count",
   "session_target",
+  "session_taken",
+  "session_missed",
+  "session_log",
 ] as const;
 
 /** Row payload for bw_bubbles: extras live in the bubble_extras setting, not in table columns. */
@@ -131,6 +135,9 @@ export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExt
     if (bubble.archived) extras.archived = true;
     if (bubble.session_count) extras.session_count = bubble.session_count;
     if (bubble.session_target) extras.session_target = bubble.session_target;
+    if (bubble.session_taken) extras.session_taken = bubble.session_taken;
+    if (bubble.session_missed) extras.session_missed = bubble.session_missed;
+    if (bubble.session_log?.length) extras.session_log = bubble.session_log;
     if (Object.keys(extras).length) out[bubble.id] = extras;
   }
   return out;
@@ -143,6 +150,9 @@ const EXTRA_DEFAULTS: Required<BubbleExtras> = {
   archived: false,
   session_count: 0,
   session_target: 0,
+  session_taken: 0,
+  session_missed: 0,
+  session_log: [],
 };
 
 function asExtras(value: unknown): Record<string, BubbleExtras> {
@@ -158,6 +168,9 @@ function asExtras(value: unknown): Record<string, BubbleExtras> {
       archived: Boolean(rec.archived),
       session_count: typeof rec.session_count === "number" ? rec.session_count : 0,
       session_target: typeof rec.session_target === "number" ? rec.session_target : 0,
+      session_taken: typeof rec.session_taken === "number" ? rec.session_taken : 0,
+      session_missed: typeof rec.session_missed === "number" ? rec.session_missed : 0,
+      session_log: asSessionLog(rec.session_log),
     };
   }
   return out;

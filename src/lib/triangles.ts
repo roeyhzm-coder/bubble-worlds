@@ -66,15 +66,36 @@ export function asTriangleTypes(value: unknown): TriangleType[] {
       color: typeof row.color === "string" && row.color ? row.color : "#94a3b8",
       template: asTemplate(row.template),
       order_index: typeof row.order_index === "number" ? row.order_index : index,
+      ...(row.counter_migrated === true ? { counter_migrated: true } : {}),
     }));
   return mergeTriangleTypes(parsed);
+}
+
+const COUNTER_NAME = "מעקב פעמים";
+const COUNTER_COLORS = new Set(["#7c3aed", "#8b5cf6"]);
+
+/** Legacy purple "מעקב פעמים" triangles saved before the counter template existed. */
+function isLegacyCounter(type: TriangleType): boolean {
+  return (
+    type.id === TRI_COUNTER ||
+    type.name.trim() === COUNTER_NAME ||
+    COUNTER_COLORS.has(type.color.trim().toLowerCase())
+  );
+}
+
+/** One-time fix: upgrades a legacy counter triangle stuck on "tracking" and flags it as done. */
+export function upgradeCounterTriangle(type: TriangleType): TriangleType {
+  if (type.counter_migrated || type.template !== "tracking" || !isLegacyCounter(type)) return type;
+  return { ...type, template: "counter", counter_migrated: true };
 }
 
 export function mergeTriangleTypes(existing: TriangleType[]): TriangleType[] {
   const map = new Map<string, TriangleType>();
   for (const item of DEFAULT_TRIANGLE_TYPES) map.set(item.id, item);
   for (const item of existing) map.set(item.id, { ...map.get(item.id), ...item });
-  return [...map.values()].sort((a, b) => a.order_index - b.order_index);
+  return [...map.values()]
+    .map(upgradeCounterTriangle)
+    .sort((a, b) => a.order_index - b.order_index);
 }
 
 export function asActionSteps(value: unknown): ActionStep[] {

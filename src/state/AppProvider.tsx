@@ -127,6 +127,9 @@ const EXTRA_PATCH_KEYS = [
   "archived",
   "session_count",
   "session_target",
+  "session_taken",
+  "session_missed",
+  "session_log",
 ] as const;
 
 function clampPos(n: number): number {
@@ -580,6 +583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         color: PALETTE[prev.triangleTypes.length % PALETTE.length] ?? "#94a3b8",
         template: "tracking",
         order_index: prev.triangleTypes.length,
+        counter_migrated: true,
       };
       const triangleTypes = [...prev.triangleTypes, type];
       persistTriangles(triangleTypes);
@@ -591,8 +595,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateTriangleType = useCallback(
     (id: string, patch: Partial<TriangleType>) => {
       mutate((prev) => {
+        // A manual template pick is final: the legacy counter auto-upgrade must not undo it.
         const triangleTypes = prev.triangleTypes.map((item) =>
-          item.id === id ? { ...item, ...patch } : item,
+          item.id === id
+            ? { ...item, ...patch, ...(patch.template ? { counter_migrated: true } : {}) }
+            : item,
         );
         const nextType = triangleTypes.find((item) => item.id === id);
         const bubbles = nextType

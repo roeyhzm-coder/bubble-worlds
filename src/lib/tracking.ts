@@ -1,4 +1,4 @@
-import type { Bubble, StreakMode, ToolTemplate } from "../types";
+import type { Bubble, SessionOutcome, StreakMode, ToolTemplate } from "../types";
 import { todayKey } from "./defaults";
 
 function parseDay(key: string): Date {
@@ -64,6 +64,47 @@ export function sessionProgress(bubble: Bubble): { done: number; target: number;
   const done = Math.max(0, Math.round(bubble.session_count ?? 0));
   const target = Math.max(1, Math.round(bubble.session_target || DEFAULT_SESSION_TARGET));
   return { done, target, ratio: Math.min(1, done / target) };
+}
+
+export const SESSION_LOG_LIMIT = 50;
+
+export function asSessionLog(value: unknown): SessionOutcome[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is SessionOutcome => entry === "done" || entry === "missed")
+    .slice(-SESSION_LOG_LIMIT);
+}
+
+/** Counter template: every logged outing (taken + missed) and the conversion rate. */
+export function sessionOpportunities(bubble: Bubble): {
+  taken: number;
+  missed: number;
+  total: number;
+  accuracy: number | null;
+  recent: SessionOutcome[];
+} {
+  const taken = Math.max(0, Math.round(bubble.session_taken ?? 0));
+  const missed = Math.max(0, Math.round(bubble.session_missed ?? 0));
+  const total = taken + missed;
+  return {
+    taken,
+    missed,
+    total,
+    accuracy: total > 0 ? Math.round((taken / total) * 100) : null,
+    recent: asSessionLog(bubble.session_log).slice(-10),
+  };
+}
+
+/** Patch that logs one outing: +1/-1 on the count (min 0) plus the outcome history. */
+export function logSessionOutcome(bubble: Bubble, outcome: SessionOutcome): Partial<Bubble> {
+  const count = Math.max(0, Math.round(bubble.session_count ?? 0));
+  const taken = outcome === "done";
+  return {
+    session_count: Math.min(100000, Math.max(0, count + (taken ? 1 : -1))),
+    session_taken: Math.max(0, Math.round(bubble.session_taken ?? 0)) + (taken ? 1 : 0),
+    session_missed: Math.max(0, Math.round(bubble.session_missed ?? 0)) + (taken ? 0 : 1),
+    session_log: [...asSessionLog(bubble.session_log), outcome].slice(-SESSION_LOG_LIMIT),
+  };
 }
 
 /**
