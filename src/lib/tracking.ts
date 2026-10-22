@@ -57,6 +57,15 @@ export function weeklyProgress(bubble: Bubble): { done: number; target: number; 
   };
 }
 
+export const DEFAULT_SESSION_TARGET = 10;
+
+/** Counter template: opportunities taken vs. the goal (no dates involved). */
+export function sessionProgress(bubble: Bubble): { done: number; target: number; ratio: number } {
+  const done = Math.max(0, Math.round(bubble.session_count ?? 0));
+  const target = Math.max(1, Math.round(bubble.session_target || DEFAULT_SESSION_TARGET));
+  return { done, target, ratio: Math.min(1, done / target) };
+}
+
 /**
  * Weekly-target streak: consecutive weeks that met the target add their check-ins.
  * The current week never breaks the streak while its target can still be reached.
@@ -122,7 +131,7 @@ export function isItemCompleted(bubble: Bubble, template: ToolTemplate | undefin
   if (template === "action") return Boolean(bubble.action_done);
   if (template === "thought") return Boolean(bubble.challenge_done);
   if (bubble.challenge_done) return true;
-  const progress = trackingProgress(bubble);
+  const progress = template === "counter" ? sessionProgress(bubble) : trackingProgress(bubble);
   return progress.done >= progress.target;
 }
 

@@ -7,6 +7,7 @@ import {
   hasDate,
   isItemCompleted,
   itemStreak,
+  sessionProgress,
   trackingProgress,
   weeklyProgress,
 } from "../lib/tracking";
@@ -17,6 +18,8 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ProgressRing } from "./ProgressRing";
 
 const DAY_PRESETS = [21, 30, 60, 90, 120];
+const SESSION_PRESETS = [10, 25, 50, 100];
+const COUNTER_COLOR = "#7C3AED";
 const FREQUENCIES = [1, 2, 3, 4, 5, 6, 7];
 const HEB_DAYS = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"];
 const MONTH_FORMAT = new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" });
@@ -157,6 +160,8 @@ export function TypeTools({
     <>
       {type.template === "action" ? (
         <ActionTools item={live} />
+      ) : type.template === "counter" ? (
+        <CounterTools item={live} color={type.color} />
       ) : (
         <TrackingTools item={live} color={type.color} />
       )}
@@ -460,6 +465,121 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
   );
 }
 
+/** Compact X/Y ring for collapsed counter rows. */
+export function SessionBadge({ item, color, size = 40 }: { item: Bubble; color: string; size?: number }) {
+  const progress = sessionProgress(item);
+  return (
+    <div className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }}>
+      <ProgressRing ratio={progress.ratio} size={size} color={color} className="absolute inset-0" />
+      <span className="text-[9px] font-extrabold text-slate-600">{progress.done}</span>
+    </div>
+  );
+}
+
+function CounterTools({ item, color }: { item: Bubble; color: string }) {
+  const { updateBubble } = useApp();
+  const [confirmReset, setConfirmReset] = useState(false);
+  const progress = sessionProgress(item);
+  const [customTarget, setCustomTarget] = useState(String(progress.target));
+
+  useEffect(() => {
+    setCustomTarget(String(progress.target));
+  }, [progress.target]);
+
+  const setCount = (next: number) =>
+    updateBubble(item.id, { session_count: Math.min(100000, Math.max(0, Math.round(next))) });
+  const applyCustomTarget = (raw: string) => {
+    setCustomTarget(raw);
+    const next = Math.round(Number(raw));
+    if (!Number.isFinite(next) || next < 1) return;
+    updateBubble(item.id, { session_target: Math.min(100000, next) });
+  };
+
+  return (
+    <div className="space-y-2.5 border-t border-slate-100 px-3 py-3">
+      <div className="flex items-center gap-3">
+        <div className="relative grid h-12 w-12 place-items-center">
+          <ProgressRing ratio={progress.ratio} size={48} color={color} className="absolute inset-0" />
+          <span className="text-[10px] font-extrabold text-slate-700">{progress.done}</span>
+        </div>
+        <div className="min-w-0 flex-1 text-sm font-extrabold text-slate-700">
+          {progress.done} / {progress.target} פעמים
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setCount(progress.done + 1)}
+        className="flex h-12 w-full items-center justify-center gap-1 rounded-xl text-sm font-extrabold text-white shadow-soft"
+        style={{ background: COUNTER_COLOR }}
+      >
+        ✓ ביצעתי הפעם (+1)
+      </button>
+      <button
+        type="button"
+        disabled={progress.done === 0}
+        onClick={() => setCount(progress.done - 1)}
+        className="h-11 w-full rounded-xl bg-violet-50 text-xs font-extrabold text-violet-700 disabled:opacity-40"
+      >
+        יצאתי ולא ביצעתי (-1)
+      </button>
+
+      <NumberField label="ספירה נוכחית" value={progress.done} onCommit={setCount} />
+
+      <div className="text-[11px] font-bold text-slate-400">יעד פעמים</div>
+      <div className="flex flex-wrap gap-1.5">
+        {SESSION_PRESETS.map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => updateBubble(item.id, { session_target: n })}
+            className={`h-8 rounded-lg px-2.5 text-xs font-bold ${
+              progress.target === n ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-600"
+            }`}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <label className="flex h-11 items-center gap-2 rounded-xl bg-slate-50 px-3">
+        <span className="shrink-0 text-[11px] font-extrabold text-slate-500">יעד מותאם אישית</span>
+        <input
+          type="number"
+          min={1}
+          max={100000}
+          inputMode="numeric"
+          value={customTarget}
+          onChange={(e) => applyCustomTarget(e.target.value)}
+          className="h-10 min-w-0 flex-1 bg-transparent text-end text-sm font-extrabold text-slate-800 outline-none"
+          aria-label="יעד מותאם אישית"
+        />
+      </label>
+
+      <CompleteToggle item={item} label="סיימתי את האתגר ✓" />
+
+      <button
+        type="button"
+        onClick={() => setConfirmReset(true)}
+        className="h-10 w-full rounded-xl bg-rose-50 text-xs font-bold text-rose-500"
+      >
+        איפוס מונה ל-0
+      </button>
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="לאפס את המונה?"
+        body="הספירה תחזור ל-0. היעד וההערות נשמרים."
+        confirmLabel="איפוס"
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => {
+          setCount(0);
+          setConfirmReset(false);
+        }}
+      />
+    </div>
+  );
+}
+
 function ActionTools({ item }: { item: Bubble }) {
   const { updateBubble } = useApp();
   const [draft, setDraft] = useState("");
@@ -603,6 +723,7 @@ function ThoughtTools({ item, spacious }: { item: Bubble; spacious: boolean }) {
 export function templateLabel(template: ToolTemplate): string {
   if (template === "action") return "תבנית משימה";
   if (template === "thought") return "תבנית מחשבה";
+  if (template === "counter") return "מונה פעמים / הזדמנויות";
   return "תבנית מעקב";
 }
 

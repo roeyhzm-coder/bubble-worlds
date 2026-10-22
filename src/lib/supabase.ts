@@ -104,7 +104,14 @@ function normalizeCategory(row: Category): Category {
   return { ...row, container_type: asWorldKind(row.container_type) };
 }
 
-const EXTRA_KEYS = ["challenge_done", "done_offset", "streak_offset", "archived"] as const;
+const EXTRA_KEYS = [
+  "challenge_done",
+  "done_offset",
+  "streak_offset",
+  "archived",
+  "session_count",
+  "session_target",
+] as const;
 
 /** Row payload for bw_bubbles: extras live in the bubble_extras setting, not in table columns. */
 export function toBubbleRow(bubble: Bubble): Omit<Bubble, keyof BubbleExtras> {
@@ -122,6 +129,8 @@ export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExt
     if (bubble.done_offset) extras.done_offset = bubble.done_offset;
     if (bubble.streak_offset) extras.streak_offset = bubble.streak_offset;
     if (bubble.archived) extras.archived = true;
+    if (bubble.session_count) extras.session_count = bubble.session_count;
+    if (bubble.session_target) extras.session_target = bubble.session_target;
     if (Object.keys(extras).length) out[bubble.id] = extras;
   }
   return out;
@@ -132,6 +141,8 @@ const EXTRA_DEFAULTS: Required<BubbleExtras> = {
   done_offset: 0,
   streak_offset: 0,
   archived: false,
+  session_count: 0,
+  session_target: 0,
 };
 
 function asExtras(value: unknown): Record<string, BubbleExtras> {
@@ -145,6 +156,8 @@ function asExtras(value: unknown): Record<string, BubbleExtras> {
       done_offset: typeof rec.done_offset === "number" ? rec.done_offset : 0,
       streak_offset: typeof rec.streak_offset === "number" ? rec.streak_offset : 0,
       archived: Boolean(rec.archived),
+      session_count: typeof rec.session_count === "number" ? rec.session_count : 0,
+      session_target: typeof rec.session_target === "number" ? rec.session_target : 0,
     };
   }
   return out;

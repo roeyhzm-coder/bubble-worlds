@@ -120,7 +120,14 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-const EXTRA_PATCH_KEYS = ["challenge_done", "done_offset", "streak_offset", "archived"] as const;
+const EXTRA_PATCH_KEYS = [
+  "challenge_done",
+  "done_offset",
+  "streak_offset",
+  "archived",
+  "session_count",
+  "session_target",
+] as const;
 
 function clampPos(n: number): number {
   return Math.min(92, Math.max(8, n));

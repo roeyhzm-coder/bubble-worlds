@@ -7,6 +7,7 @@ function localId(prefix: string): string {
 export const TRI_TRACK = "tri-track";
 export const TRI_ACTION = "tri-action";
 export const TRI_THOUGHT = "tri-thought";
+export const TRI_COUNTER = "tri-counter";
 
 export const DEFAULT_TRIANGLE_TYPES: TriangleType[] = [
   {
@@ -30,6 +31,13 @@ export const DEFAULT_TRIANGLE_TYPES: TriangleType[] = [
     template: "thought",
     order_index: 2,
   },
+  {
+    id: TRI_COUNTER,
+    name: "מעקב פעמים",
+    color: "#7C3AED",
+    template: "counter",
+    order_index: 3,
+  },
 ];
 
 export const WEEKDAYS = [
@@ -43,7 +51,7 @@ export const WEEKDAYS = [
 ] as const;
 
 export function asTemplate(value: unknown): ToolTemplate {
-  return value === "action" || value === "thought" || value === "tracking"
+  return value === "action" || value === "thought" || value === "tracking" || value === "counter"
     ? value
     : "tracking";
 }
@@ -109,7 +117,7 @@ export function clearTrianglePatch(defaultColor: string): Partial<Bubble> {
 
 export function trianglePatch(type: TriangleType): Partial<Bubble> {
   const status: BubbleStatus =
-    type.template === "tracking"
+    type.template === "tracking" || type.template === "counter"
       ? "active_tracking"
       : type.template === "action"
         ? "focus"

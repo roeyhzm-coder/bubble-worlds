@@ -6,7 +6,7 @@ import type { ToolTemplate } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { templateLabel } from "./ItemTools";
 
-const TEMPLATES: ToolTemplate[] = ["tracking", "action", "thought"];
+const TEMPLATES: ToolTemplate[] = ["tracking", "action", "thought", "counter"];
 
 export function TriangleStudio() {
   const {
@@ -126,7 +126,7 @@ export function TriangleStudio() {
                       aria-label="בחירת צבע"
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {TEMPLATES.map((template) => (
                       <button
                         key={template}

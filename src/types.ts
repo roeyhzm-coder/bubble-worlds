@@ -16,7 +16,7 @@ export type StreakMode = "strict" | "flexible" | "cumulative";
 
 export type WorldKind = "bubbles" | "list";
 
-export type ToolTemplate = "tracking" | "action" | "thought";
+export type ToolTemplate = "tracking" | "action" | "thought" | "counter";
 
 export interface TriangleType {
   id: string;
@@ -74,10 +74,17 @@ export interface Bubble {
   streak_offset?: number;
   /** Saved to the successes vault and hidden from active lists (data kept). */
   archived?: boolean;
+  /** Counter template: times the opportunity was taken. */
+  session_count?: number;
+  /** Counter template: goal for session_count. */
+  session_target?: number;
 }
 
 /** Item fields synced via the `bubble_extras` setting instead of bw_bubbles columns. */
-export type BubbleExtras = Pick<Bubble, "challenge_done" | "done_offset" | "streak_offset" | "archived">;
+export type BubbleExtras = Pick<
+  Bubble,
+  "challenge_done" | "done_offset" | "streak_offset" | "archived" | "session_count" | "session_target"
+>;
 
 export type ColorRoles = Record<BubbleStatus, string>;
 

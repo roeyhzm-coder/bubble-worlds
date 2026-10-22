@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { sessionProgress } from "../lib/tracking";
 import { findTriangle } from "../lib/triangles";
 import { useApp } from "../state/AppProvider";
 import type { Bubble } from "../types";
@@ -8,6 +9,7 @@ import {
   CompletionBar,
   NoteIndicator,
   NotesField,
+  SessionBadge,
   TriangleGlyph,
   TrianglePicker,
   TypeTools,
@@ -115,6 +117,14 @@ export function InnerList({ items }: { items: Bubble[] }) {
                   </span>
                   <NoteIndicator notes={item.notes} />
                   <span className="flex-1" />
+                  {type?.template === "counter" && (
+                    <>
+                      <span className="shrink-0 text-[11px] font-extrabold text-violet-700">
+                        {sessionProgress(item).done} / {sessionProgress(item).target} פעמים
+                      </span>
+                      <SessionBadge item={item} color={type.color} size={32} />
+                    </>
+                  )}
                   {open ? (
                     <ChevronUp size={16} className="shrink-0 text-slate-400" />
                   ) : (

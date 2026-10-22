@@ -1,11 +1,11 @@
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { dueText } from "../lib/triangles";
-import { isItemCompleted, trackingProgress } from "../lib/tracking";
+import { isItemCompleted, sessionProgress, trackingProgress } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { CompletionBar, NoteIndicator, TypeTools } from "./ItemTools";
+import { CompletionBar, NoteIndicator, SessionBadge, TypeTools } from "./ItemTools";
 import { ProgressRing } from "./ProgressRing";
 
 export function FocusHub() {
@@ -145,6 +145,7 @@ function HubCard({
             {item.action_done ? "✓" : ""}
           </span>
         )}
+        {type.template === "counter" && <SessionBadge item={item} color={type.color} />}
         {type.template === "thought" && (
           <span className="shrink-0 text-base" style={{ color: type.color }}>
             ▼
@@ -155,6 +156,11 @@ function HubCard({
             <span className="truncate text-[14px] font-bold text-slate-800">{item.title || "ללא שם"}</span>
             <NoteIndicator notes={item.notes} />
           </div>
+          {type.template === "counter" && (
+            <div className="truncate text-[11px] font-bold text-violet-700">
+              {sessionProgress(item).done} / {sessionProgress(item).target} פעמים
+            </div>
+          )}
           {type.template === "action" && dueText(item) && (
             <div className="truncate text-[11px] font-bold text-emerald-600">{dueText(item)}</div>
           )}
