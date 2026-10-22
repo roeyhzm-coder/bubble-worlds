@@ -63,26 +63,71 @@ export function mergeDailyTasks(local: DailyTask[], remote: DailyTask[]): DailyT
   return applyDailyRollover([...map.values()]);
 }
 
-export function applyDailyRollover(tasks: DailyTask[], today = todayKey()): DailyTask[] {
+function isBlank(task: Pick<DailyTask, "text">): boolean {
+  return !task.text || task.text.trim() === "";
+}
+
+/**
+ * Keeps every row with text; blank rows are capped so the date shows at most
+ * DAILY_SLOT_COUNT rows in total (the earliest blanks survive).
+ */
+function capBlankSlots(rows: DailyTask[]): DailyTask[] {
+  const sorted = [...rows].sort((a, b) => a.order_index - b.order_index);
+  let blankRoom = Math.max(0, DAILY_SLOT_COUNT - sorted.filter((item) => !isBlank(item)).length);
+  return sorted.filter((item) => {
+    if (!isBlank(item)) return true;
+    if (blankRoom <= 0) return false;
+    blankRoom -= 1;
+    return true;
+  });
+}
+
+function padSlots(rows: DailyTask[], date: string): DailyTask[] {
+  const padded = rows.map((item, order_index) => ({ ...item, order_index }));
+  while (padded.length < DAILY_SLOT_COUNT) padded.push(emptyDailyTask(date, padded.length));
+  return padded;
+}
+
+export interface DailyNormalizeOptions {
+  /** Drop blank rows that push a date past DAILY_SLOT_COUNT (load + cloud merge). */
+  trimBlanks?: boolean;
+}
+
+/**
+ * Past dates: blank rows are purged, completed rows stay as the archive, and unfinished
+ * rows with text roll into today (+1 rollover). Today is padded to DAILY_SLOT_COUNT only
+ * on a new day (something rolled or was purged) or when it has no rows at all, so manual
+ * deletes below 6 stick.
+ */
+export function applyDailyRollover(
+  tasks: DailyTask[],
+  today = todayKey(),
+  { trimBlanks = true }: DailyNormalizeOptions = {},
+): DailyTask[] {
   const rolled: DailyTask[] = [];
   const todayItems: DailyTask[] = [];
   const archive: DailyTask[] = [];
-  const future: DailyTask[] = [];
+  const future = new Map<string, DailyTask[]>();
+  let newDay = false;
 
   for (const task of tasks) {
     if (task.date > today) {
-      future.push(task);
+      future.set(task.date, [...(future.get(task.date) ?? []), task]);
       continue;
     }
     if (task.date === today) {
       todayItems.push(task);
       continue;
     }
+    if (isBlank(task)) {
+      newDay = true;
+      continue;
+    }
     if (task.completed) {
       archive.push(task);
       continue;
     }
-    if (!task.text.trim()) continue;
+    newDay = true;
     rolled.push({
       ...task,
       date: today,
@@ -91,21 +136,24 @@ export function applyDailyRollover(tasks: DailyTask[], today = todayKey()): Dail
   }
 
   const rolledIds = new Set(rolled.map((item) => item.id));
-  const combined = [
+  let combined = [
     ...rolled.sort((a, b) => a.order_index - b.order_index),
     ...todayItems
       .filter((item) => !rolledIds.has(item.id))
       .sort((a, b) => a.order_index - b.order_index),
   ].map((item, order_index) => ({ ...item, order_index }));
 
-  while (combined.length < DAILY_SLOT_COUNT) {
-    combined.push(emptyDailyTask(today, combined.length));
-  }
+  if (trimBlanks || newDay) combined = capBlankSlots(combined);
+  if (newDay || combined.length === 0) combined = padSlots(combined, today);
+
+  const futureRows = [...future.values()].flatMap((rows) =>
+    trimBlanks ? capBlankSlots(rows) : rows,
+  );
 
   return [
     ...combined,
     ...archive.sort((a, b) => b.date.localeCompare(a.date) || a.order_index - b.order_index),
-    ...future,
+    ...futureRows,
   ];
 }
 
@@ -132,13 +180,10 @@ export function archivedTasks(tasks: DailyTask[], today = todayKey()): DailyTask
     .slice(0, 21);
 }
 
+/** Fits a date to DAILY_SLOT_COUNT rows: pads blanks, trims surplus blanks, never drops text. */
 export function ensureDateSlots(tasks: DailyTask[], date: string): DailyTask[] {
-  const current = dateTasks(tasks, date);
-  if (current.length >= DAILY_SLOT_COUNT) return tasks;
-  const extras = Array.from({ length: DAILY_SLOT_COUNT - current.length }, (_, index) =>
-    emptyDailyTask(date, current.length + index),
-  );
-  return [...tasks, ...extras];
+  const fitted = padSlots(capBlankSlots(dateTasks(tasks, date)), date);
+  return [...tasks.filter((item) => item.date !== date), ...fitted];
 }
 
 export function ensureTodaySlots(tasks: DailyTask[], today = todayKey()): DailyTask[] {

@@ -629,7 +629,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const persistDaily = useCallback((dailyTasks: DailyTask[]) => {
-    const next = applyDailyRollover(dailyTasks);
+    // No blank trimming here: a row just added with "+" must survive until it gets text.
+    const next = applyDailyRollover(dailyTasks, todayKey(), { trimBlanks: false });
     void upsertSetting("daily_tasks", next);
     return next;
   }, []);
@@ -674,13 +675,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteDailyTask = useCallback(
     (id: string) => {
       mutate((prev) => {
-        const removed = prev.dailyTasks.find((item) => item.id === id);
-        const dailyTasks = persistDaily(
-          ensureDateSlots(
-            prev.dailyTasks.filter((item) => item.id !== id),
-            removed?.date ?? todayKey(),
-          ),
-        );
+        // No refill: deleting rows may leave fewer than 6 for the day.
+        const dailyTasks = persistDaily(prev.dailyTasks.filter((item) => item.id !== id));
         return { ...prev, dailyTasks };
       });
     },
@@ -692,19 +688,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mutate((prev) => {
         const current = prev.dailyTasks.find((item) => item.id === id);
         if (!current) return prev;
-        const from = current.date;
         const today = todayKey();
-        const updated = prev.dailyTasks.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                date,
-                rollover_count: date > today ? 0 : item.rollover_count,
-                order_index: dateTasks(prev.dailyTasks, date).length,
-              }
-            : item,
-        );
-        const dailyTasks = persistDaily(ensureDateSlots(ensureDateSlots(updated, from), date));
+        // The moved task takes the first blank slot on the target date instead of adding a row.
+        const target = dateTasks(prev.dailyTasks, date);
+        const slot = target.find((item) => !item.text.trim());
+        const updated = prev.dailyTasks
+          .filter((item) => item.id !== slot?.id)
+          .map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  date,
+                  rollover_count: date > today ? 0 : item.rollover_count,
+                  order_index: slot ? slot.order_index : target.length,
+                }
+              : item,
+          );
+        const dailyTasks = persistDaily(updated);
         return { ...prev, dailyTasks };
       });
     },
