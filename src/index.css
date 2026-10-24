@@ -18,7 +18,7 @@ body,
 
 body {
   margin: 0;
-  background: #f7f8fb;
+  background: #f4f6fa;
   color: #0f172a;
   font-family: Heebo, Assistant, "Segoe UI", Tahoma, Arial, sans-serif;
   overflow: hidden;
@@ -43,4 +43,27 @@ textarea {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+@layer base {
+  button {
+    transition-property: transform, background-color, color, box-shadow, opacity;
+    transition-duration: 140ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  button:not(:disabled):active {
+    transform: scale(0.98);
+  }
+}
+
+@layer components {
+  /* Crisp elevated surface shared by list rows, hub groups and daily tasks. */
+  .card {
+    @apply rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md;
+  }
+
+  .chip {
+    @apply inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-extrabold;
+  }
 }

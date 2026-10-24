@@ -96,7 +96,7 @@ export function PageSwitcher({
     <div className="mx-auto mt-1.5 flex w-full max-w-lg items-center gap-1.5">
       <div
         dir="ltr"
-        className="flex h-11 min-w-0 flex-1 rounded-2xl bg-white p-1 shadow-soft"
+        className="card flex h-11 min-w-0 flex-1 p-1"
       >
         {tabs.map((tab) =>
           editing ? (
@@ -112,8 +112,10 @@ export function PageSwitcher({
               key={tab.id}
               type="button"
               onClick={() => onPage(tab.id)}
-              className={`h-9 min-w-0 flex-1 truncate rounded-xl px-0.5 text-[9px] font-extrabold transition ${
-                page === tab.id ? "bg-slate-900 text-white" : "text-slate-500"
+              className={`h-9 min-w-0 flex-1 truncate rounded-xl px-0.5 text-[9px] font-extrabold ${
+                page === tab.id
+                  ? "bg-gradient-to-b from-slate-700 to-slate-900 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_6px_14px_-6px_rgba(15,23,42,0.55)]"
+                  : "text-slate-500 hover:bg-slate-50"
               }`}
             >
               {tab.emoji} {tab.value}
@@ -124,7 +126,7 @@ export function PageSwitcher({
       <button
         type="button"
         onClick={() => setEditing((v) => !v)}
-        className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-slate-500 shadow-soft"
+        className="card grid h-11 w-11 shrink-0 place-items-center text-slate-500"
         aria-label={editing ? "סיום עריכת שמות" : "עריכת שמות הלשוניות"}
       >
         {editing ? <Check size={16} /> : <Pencil size={15} />}

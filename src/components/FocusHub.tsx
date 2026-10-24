@@ -1,12 +1,20 @@
-import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { ChevronDown, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { dueText } from "../lib/triangles";
 import { isItemCompleted, sessionProgress, trackingProgress } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { CompletionBar, NoteIndicator, SessionBadge, TypeTools } from "./ItemTools";
-import { ProgressRing } from "./ProgressRing";
+import {
+  CompletionBar,
+  DoneEditingButton,
+  NoteIndicator,
+  QuickCheck,
+  TitleField,
+  TypeSwitcher,
+  TypeTools,
+  accentRing,
+} from "./ItemTools";
 
 export function FocusHub() {
   const { snapshot, setPage, setDrill } = useApp();
@@ -46,13 +54,18 @@ export function FocusHub() {
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pb-24 no-scrollbar">
         {groups.map(({ type, items }) => (
-          <section key={type.id} className="rounded-2xl bg-white/80 p-2.5 shadow-soft">
+          <section key={type.id} className="card p-2.5">
             <div className="mb-2 flex h-8 items-center gap-2 px-1">
               <span className="text-base leading-none" style={{ color: type.color }}>
                 ▼
               </span>
               <span className="text-xs font-extrabold text-slate-700">{type.name}</span>
-              <span className="text-[11px] text-slate-400">{items.length}</span>
+              <span
+                className="rounded-full px-1.5 text-[10px] font-extrabold text-slate-600"
+                style={{ background: `color-mix(in srgb, ${type.color} 16%, white)` }}
+              >
+                {items.length}
+              </span>
             </div>
             <div className="space-y-2">
               {items.map((item) => (
@@ -119,38 +132,24 @@ function HubCard({
   onDelete: () => void;
   onSource: () => void;
 }) {
-  const { updateBubble } = useApp();
+  const { setTriangleType } = useApp();
   const progress = trackingProgress(item);
   const completed = isItemCompleted(item, type.template);
   return (
-    <div className={`rounded-2xl bg-white ${completed ? "ring-2 ring-amber-300" : ""}`}>
+    <div
+      className={`rounded-2xl border bg-white transition-shadow ${
+        completed ? "border-amber-300 ring-2 ring-amber-200" : "border-slate-100"
+      } ${open ? "shadow-md" : ""}`}
+      style={open && !completed ? accentRing(type.color) : undefined}
+    >
       <div className="flex min-h-12 w-full items-center gap-1 px-2">
+      <QuickCheck item={item} type={type} size={36} />
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-start"
       >
-        {type.template === "tracking" && (
-          <div className="relative grid h-10 w-10 shrink-0 place-items-center">
-            <ProgressRing ratio={progress.ratio} size={40} color={type.color} className="absolute inset-0" />
-            <span className="text-[9px] font-extrabold text-slate-600">{progress.done}</span>
-          </div>
-        )}
-        {type.template === "action" && (
-          <span
-            className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border ${
-              item.action_done ? "bg-emerald-500 text-white" : "border-slate-300"
-            }`}
-          >
-            {item.action_done ? "✓" : ""}
-          </span>
-        )}
-        {type.template === "counter" && <SessionBadge item={item} color={type.color} />}
-        {type.template === "thought" && (
-          <span className="shrink-0 text-base" style={{ color: type.color }}>
-            ▼
-          </span>
-        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <span className="truncate text-[14px] font-bold text-slate-800">{item.title || "ללא שם"}</span>
@@ -161,15 +160,19 @@ function HubCard({
               {sessionProgress(item).done} / {sessionProgress(item).target} פעמים
             </div>
           )}
+          {type.template === "tracking" && (
+            <div className="truncate text-[11px] font-bold text-slate-400">
+              {progress.done}/{progress.target} ימים
+            </div>
+          )}
           {type.template === "action" && dueText(item) && (
             <div className="truncate text-[11px] font-bold text-emerald-600">{dueText(item)}</div>
           )}
         </div>
-        {open ? (
-          <ChevronUp size={16} className="shrink-0 text-slate-400" />
-        ) : (
-          <ChevronDown size={16} className="shrink-0 text-slate-400" />
-        )}
+        <ChevronDown
+          size={16}
+          className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
         <button
           type="button"
@@ -185,25 +188,23 @@ function HubCard({
       </div>
       <CompletionBar item={item} onDelete={onDelete} />
       {open && (
-        <>
-          <div className="px-3 pb-1">
-            <input
-              value={item.title}
-              onChange={(e) => updateBubble(item.id, { title: e.target.value })}
-              placeholder="שם הפריט"
-              aria-label="שם הפריט"
-              className="h-10 w-full rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none"
-            />
+        <div className="border-t border-slate-100">
+          <div className="space-y-2 px-3 pb-1 pt-2">
+            <TitleField item={item} />
+            <div className="flex items-start justify-between gap-2">
+              <TypeSwitcher value={item.triangle_id} onChange={(id) => setTriangleType(item.id, id)} />
+              <button
+                type="button"
+                onClick={onSource}
+                className="h-8 shrink-0 rounded-full px-2 text-[11px] font-bold text-slate-400 hover:bg-slate-50"
+              >
+                לעולם המקור ‹
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onSource}
-            className="px-3 pb-1 text-[11px] font-bold text-slate-400"
-          >
-            לעולם המקור
-          </button>
           <TypeTools item={item} spacious={type.template === "thought"} />
-        </>
+          <DoneEditingButton onDone={onToggle} />
+        </div>
       )}
     </div>
   );

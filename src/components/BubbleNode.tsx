@@ -125,7 +125,7 @@ export function BubbleNode({
         style={{
           background: `radial-gradient(circle at 28% 22%, rgba(255,255,255,0.96) 0%, ${color}2e 48%, ${color}59 100%)`,
           border: "1px solid rgba(255,255,255,0.62)",
-          boxShadow: `0 14px 28px -12px ${color}73, 0 6px 14px -8px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.78)`,
+          boxShadow: `0 16px 30px -12px ${color}80, 0 6px 14px -8px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.78), inset 0 -10px 18px -10px ${color}55`,
           backdropFilter: "blur(10px)",
         }}
       >

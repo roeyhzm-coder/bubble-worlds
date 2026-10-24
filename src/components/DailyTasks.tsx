@@ -42,12 +42,12 @@ export function DailyTasks() {
             ? "תכנון לילה למחר · ללא סימני דחייה"
             : `${done}/${total || 6} הושלמו · דחייה רק ממשימות אתמול`}
         </div>
-        <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-white p-1 shadow-soft">
+        <div className="card grid grid-cols-2 gap-1.5 p-1">
           <button
             type="button"
             onClick={() => setDailyViewDate(today)}
             className={`flex h-10 items-center justify-center gap-1 rounded-xl text-[12px] font-extrabold ${
-              !planningTomorrow ? "bg-amber-100 text-amber-900" : "text-slate-500"
+              !planningTomorrow ? "bg-gradient-to-b from-amber-100 to-amber-200/70 text-amber-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" : "text-slate-500 hover:bg-slate-50"
             }`}
           >
             <Sun size={14} />
@@ -57,7 +57,7 @@ export function DailyTasks() {
             type="button"
             onClick={() => setDailyViewDate(tomorrow)}
             className={`flex h-10 items-center justify-center gap-1 rounded-xl text-[12px] font-extrabold ${
-              planningTomorrow ? "bg-indigo-100 text-indigo-900" : "text-slate-500"
+              planningTomorrow ? "bg-gradient-to-b from-indigo-100 to-indigo-200/70 text-indigo-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" : "text-slate-500 hover:bg-slate-50"
             }`}
           >
             <Moon size={14} />
@@ -72,7 +72,7 @@ export function DailyTasks() {
           return (
             <div
               key={item.id}
-              className={`rounded-2xl bg-white px-2 py-1 shadow-soft ${
+              className={`card px-2 py-1 ${
                 item.completed ? "opacity-55" : ""
               }`}
             >
@@ -84,7 +84,7 @@ export function DailyTasks() {
                   type="button"
                   onClick={() => toggleDailyTask(item.id)}
                   className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${
-                    item.completed ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400"
+                    item.completed ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_6px_14px_-6px_rgba(16,185,129,0.7)]" : "bg-slate-100 text-slate-400 hover:bg-slate-200/70"
                   }`}
                   aria-label={item.completed ? "בטל סימון" : "סמן כהושלם"}
                 >
@@ -119,7 +119,7 @@ export function DailyTasks() {
                 <button
                   type="button"
                   onClick={() => moveDailyTask(item.id, planningTomorrow ? today : tomorrow)}
-                  className="mb-1 h-7 w-full text-[11px] font-extrabold text-slate-400"
+                  className="mb-1 h-7 w-full rounded-lg text-[11px] font-extrabold text-slate-400 hover:bg-slate-50"
                 >
                   {planningTomorrow ? "העבר להיום" : "העבר למחר"}
                 </button>
@@ -131,7 +131,7 @@ export function DailyTasks() {
         <button
           type="button"
           onClick={addDailyTask}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white text-sm font-extrabold text-slate-700 shadow-soft"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white/70 text-sm font-extrabold text-slate-600 hover:bg-white"
         >
           <Plus size={16} />
           הוסף משימה
@@ -151,7 +151,7 @@ export function DailyTasks() {
                 {archive.map((item) => (
                   <div
                     key={item.id}
-                    className="flex min-h-10 items-center gap-2 rounded-xl bg-white/70 px-3 text-[13px] text-slate-500"
+                    className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200/60 bg-white/70 px-3 text-[13px] text-slate-500"
                   >
                     <span className="text-[11px] font-bold">{item.date.slice(5)}</span>
                     <span className="min-w-0 flex-1 truncate line-through">{item.text}</span>
