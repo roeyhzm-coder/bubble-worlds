@@ -298,33 +298,8 @@ export function QuickCheck({
 }) {
   const { updateBubble, markToday, unmarkToday } = useApp();
   const [pulse, setPulse] = useState(0);
-  const [undoStack, setUndoStack] = useState<SessionSnapshot[]>([]);
-  const undoTimer = useRef<number | null>(null);
+  const sessionUndo = useSessionUndo(item);
   const template = type.template;
-
-  useEffect(
-    () => () => {
-      if (undoTimer.current) window.clearTimeout(undoTimer.current);
-    },
-    [],
-  );
-
-  // Each +1 tap opens (or extends) a short window in which it can be reverted.
-  const armUndo = () => {
-    if (undoTimer.current) window.clearTimeout(undoTimer.current);
-    undoTimer.current = window.setTimeout(() => setUndoStack([]), UNDO_WINDOW_MS);
-  };
-
-  const undoLast = (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    const previous = undoStack[undoStack.length - 1];
-    if (!previous) return;
-    updateBubble(item.id, previous);
-    const rest = undoStack.slice(0, -1);
-    setUndoStack(rest);
-    if (rest.length) armUndo();
-    else if (undoTimer.current) window.clearTimeout(undoTimer.current);
-  };
 
   if (template === "thought") {
     return (
@@ -353,17 +328,7 @@ export function QuickCheck({
       if (doneToday) unmarkToday(item.id);
       else markToday(item.id);
     } else if (template === "counter") {
-      setUndoStack((stack) => [
-        ...stack,
-        {
-          session_count: item.session_count,
-          session_taken: item.session_taken,
-          session_missed: item.session_missed,
-          session_log: item.session_log,
-        },
-      ]);
-      armUndo();
-      updateBubble(item.id, logSessionOutcome(item, "done"));
+      sessionUndo.logDone();
     } else {
       updateBubble(item.id, { action_done: !item.action_done });
     }
@@ -431,24 +396,82 @@ export function QuickCheck({
           )}
         </AnimatePresence>
       </motion.button>
-      <AnimatePresence>
-        {undoStack.length > 0 && (
-          <motion.button
-            type="button"
-            onClick={undoLast}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.16 }}
-            aria-label="ביטול ה-+1 האחרון"
-            className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full bg-slate-900 px-2 text-[11px] font-extrabold text-white shadow-sm"
-          >
-            <Undo2 size={12} />
-            בטל
-          </motion.button>
-        )}
-      </AnimatePresence>
+      <UndoButton visible={sessionUndo.canUndo} onUndo={sessionUndo.undo} />
     </span>
+  );
+}
+
+/**
+ * Logs a "+1" session and keeps a short-lived stack of the prior counter fields,
+ * so accidental taps can be reverted exactly (count, taken/missed and outcome log).
+ */
+function useSessionUndo(item: Bubble): { canUndo: boolean; logDone: () => void; undo: () => void } {
+  const { updateBubble } = useApp();
+  const [stack, setStack] = useState<SessionSnapshot[]>([]);
+  const timer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  // Each +1 opens (or extends) a short window in which it can be reverted.
+  const arm = () => {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setStack([]), UNDO_WINDOW_MS);
+  };
+
+  const logDone = () => {
+    setStack((current) => [
+      ...current,
+      {
+        session_count: item.session_count,
+        session_taken: item.session_taken,
+        session_missed: item.session_missed,
+        session_log: item.session_log,
+      },
+    ]);
+    arm();
+    updateBubble(item.id, logSessionOutcome(item, "done"));
+  };
+
+  const undo = () => {
+    const previous = stack[stack.length - 1];
+    if (!previous) return;
+    updateBubble(item.id, previous);
+    const rest = stack.slice(0, -1);
+    setStack(rest);
+    if (rest.length) arm();
+    else if (timer.current) window.clearTimeout(timer.current);
+  };
+
+  return { canUndo: stack.length > 0, logDone, undo };
+}
+
+function UndoButton({ visible, onUndo }: { visible: boolean; onUndo: () => void }) {
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onUndo();
+          }}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          transition={{ duration: 0.16 }}
+          aria-label="ביטול ה-+1 האחרון"
+          className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full bg-slate-900 px-2 text-[11px] font-extrabold text-white shadow-sm"
+        >
+          <Undo2 size={12} />
+          בטל
+        </motion.button>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -962,6 +985,7 @@ function CounterTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble } = useApp();
   const [confirmReset, setConfirmReset] = useState(false);
   const [panel, setPanel] = useState<CounterPanel>(null);
+  const sessionUndo = useSessionUndo(item);
   const progress = sessionProgress(item);
   const odds = sessionOpportunities(item);
   const ringColor = color || COUNTER_COLOR;
@@ -981,8 +1005,11 @@ function CounterTools({ item, color }: { item: Bubble; color: string }) {
           </span>
         </div>
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="text-[14px] font-extrabold text-slate-800">
-            {progress.done} / {progress.target} פעמים
+          <div className="flex h-7 items-center gap-2">
+            <span className="text-[14px] font-extrabold text-slate-800">
+              {progress.done} / {progress.target} פעמים
+            </span>
+            <UndoButton visible={sessionUndo.canUndo} onUndo={sessionUndo.undo} />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="rounded-lg bg-violet-50 px-2 py-0.5 text-[11px] font-extrabold text-violet-700">
@@ -1011,7 +1038,7 @@ function CounterTools({ item, color }: { item: Bubble; color: string }) {
       <div className="grid grid-cols-[7fr_3fr] gap-1.5">
         <button
           type="button"
-          onClick={() => updateBubble(item.id, logSessionOutcome(item, "done"))}
+          onClick={sessionUndo.logDone}
           className="flex h-11 items-center justify-center gap-1 rounded-xl text-[13px] font-extrabold text-white"
           style={accentFill(ringColor)}
         >
