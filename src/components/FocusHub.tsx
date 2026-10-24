@@ -1,5 +1,6 @@
-import { ChevronDown, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ROUTINE_SLOTS, routineOf } from "../lib/routine";
 import { dueText } from "../lib/triangles";
 import { isItemCompleted, sessionProgress, trackingProgress } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
@@ -8,6 +9,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import {
   CompletionBar,
   DoneEditingButton,
+  Drawer,
   NoteIndicator,
   QuickCheck,
   TitleField,
@@ -16,10 +18,44 @@ import {
   accentRing,
 } from "./ItemTools";
 
+/** Per-device UI preference only (which hub sections are folded) — never user data. */
+const COLLAPSE_KEY = "bubble-worlds-hub-collapsed";
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsed(keys: Set<string>): void {
+  try {
+    localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...keys]));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 export function FocusHub() {
   const { snapshot, setPage, setDrill } = useApp();
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+
+  useEffect(() => {
+    saveCollapsed(collapsed);
+  }, [collapsed]);
+
+  const toggleSection = (key: string) =>
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const groups = useMemo(() => {
     return snapshot.triangleTypes
@@ -32,6 +68,31 @@ export function FocusHub() {
       .filter((group) => group.items.length > 0);
   }, [snapshot.bubbles, snapshot.triangleTypes]);
 
+  const allCollapsed = groups.length > 0 && groups.every(({ type }) => collapsed.has(type.id));
+
+  const renderCards = (type: TriangleType, items: Bubble[]) => (
+    <div className="space-y-2">
+      {items.map((item) => (
+        <HubCard
+          key={item.id}
+          item={item}
+          type={type}
+          open={openId === item.id}
+          onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
+          onDelete={() => setPendingDelete(item.id)}
+          onSource={() => {
+            setDrill(
+              item.parent_bubble_id
+                ? { kind: "bubble", id: item.parent_bubble_id }
+                : { kind: "category", id: item.category_id },
+            );
+            setPage(0);
+          }}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
       <div className="flex items-start justify-between gap-2 px-3 pb-1">
@@ -41,54 +102,119 @@ export function FocusHub() {
           </div>
           <div className="text-[11px] text-slate-400">כל הפריטים לפי סוג משולש</div>
         </div>
-        {openId && (
-          <button
-            type="button"
-            onClick={() => setOpenId(null)}
-            className="h-8 rounded-lg px-2 text-[11px] font-extrabold text-slate-500"
-          >
-            כיווץ הכל
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {openId && (
+            <button
+              type="button"
+              onClick={() => setOpenId(null)}
+              className="h-8 rounded-full px-2 text-[11px] font-extrabold text-slate-500 hover:bg-white/70"
+            >
+              סגור פריט
+            </button>
+          )}
+          {groups.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setCollapsed((current) => {
+                  const next = new Set(current);
+                  for (const { type } of groups) {
+                    if (allCollapsed) next.delete(type.id);
+                    else next.add(type.id);
+                  }
+                  return next;
+                })
+              }
+              className="inline-flex h-8 items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2.5 text-[11px] font-extrabold text-slate-600 hover:bg-white"
+            >
+              {allCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+              {allCollapsed ? "פתח הכל" : "כווץ הכל"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pb-24 no-scrollbar">
-        {groups.map(({ type, items }) => (
-          <section key={type.id} className="card p-2.5">
-            <div className="mb-2 flex h-8 items-center gap-2 px-1">
-              <span className="text-base leading-none" style={{ color: type.color }}>
-                ▼
-              </span>
-              <span className="text-xs font-extrabold text-slate-700">{type.name}</span>
-              <span
-                className="rounded-full px-1.5 text-[10px] font-extrabold text-slate-600"
-                style={{ background: `color-mix(in srgb, ${type.color} 16%, white)` }}
+        {groups.map(({ type, items }) => {
+          const groupOpen = !collapsed.has(type.id);
+          const routineGroups =
+            type.template === "tracking"
+              ? ROUTINE_SLOTS.map((slot) => ({
+                  slot,
+                  items: items.filter((item) => routineOf(item) === slot.id),
+                })).filter((group) => group.items.length > 0)
+              : null;
+          return (
+            <section key={type.id} className="card p-2.5">
+              <button
+                type="button"
+                onClick={() => toggleSection(type.id)}
+                aria-expanded={groupOpen}
+                className="flex h-9 w-full items-center gap-2 rounded-xl px-1 text-start hover:bg-slate-50/80"
               >
-                {items.length}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {items.map((item) => (
-                <HubCard
-                  key={item.id}
-                  item={item}
-                  type={type}
-                  open={openId === item.id}
-                  onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
-                  onDelete={() => setPendingDelete(item.id)}
-                  onSource={() => {
-                    setDrill(
-                      item.parent_bubble_id
-                        ? { kind: "bubble", id: item.parent_bubble_id }
-                        : { kind: "category", id: item.category_id },
-                    );
-                    setPage(0);
-                  }}
+                <span className="text-base leading-none" style={{ color: type.color }}>
+                  ▼
+                </span>
+                <span className="text-xs font-extrabold text-slate-700">{type.name}</span>
+                <span
+                  className="rounded-full px-1.5 text-[10px] font-extrabold text-slate-600"
+                  style={{ background: `color-mix(in srgb, ${type.color} 16%, white)` }}
+                >
+                  {items.length}
+                </span>
+                <span className="flex-1" />
+                <ChevronDown
+                  size={16}
+                  className={`shrink-0 text-slate-400 transition-transform ${groupOpen ? "rotate-180" : ""}`}
                 />
-              ))}
-            </div>
-          </section>
-        ))}
+              </button>
+              <Drawer open={groupOpen}>
+                <div className="pt-1">
+                  {routineGroups ? (
+                    <div className="space-y-2">
+                      {routineGroups.map(({ slot, items: slotItems }) => {
+                        const key = `${type.id}:${slot.id}`;
+                        const subOpen = !collapsed.has(key);
+                        return (
+                          <div
+                            key={slot.id}
+                            className="rounded-xl border border-slate-100 bg-slate-50/50 p-1.5"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleSection(key)}
+                              aria-expanded={subOpen}
+                              className="flex h-8 w-full items-center gap-1.5 rounded-lg px-1.5 text-start hover:bg-white/80"
+                            >
+                              <span className="text-sm leading-none">{slot.emoji}</span>
+                              <span className="text-[12px] font-extrabold text-slate-700">
+                                {slot.id === "general" ? "כללי" : slot.heading}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-400">· {slotItems.length}</span>
+                              <span className="flex-1" />
+                              <ChevronDown
+                                size={14}
+                                className={`shrink-0 text-slate-400 transition-transform ${subOpen ? "rotate-180" : ""}`}
+                              />
+                            </button>
+                            <Drawer open={subOpen}>{renderCards(type, slotItems)}</Drawer>
+                          </div>
+                        );
+                      })}
+                      {routineGroups.length === 1 && routineGroups[0].slot.id === "general" && (
+                        <div className="px-1 text-[10px] font-bold text-slate-400">
+                          טיפ: תייגו פריט כ☀️ בוקר / 🌤️ צהריים / 🌙 ערב דרך הצ'יפ שלו כדי לפצל לשגרות
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    renderCards(type, items)
+                  )}
+                </div>
+              </Drawer>
+            </section>
+          );
+        })}
 
         {groups.length === 0 && (
           <div className="grid h-40 place-items-center text-sm text-slate-400">
@@ -203,7 +329,9 @@ function HubCard({
             </div>
           </div>
           <TypeTools item={item} spacious={type.template === "thought"} />
-          <DoneEditingButton onDone={onToggle} />
+          <div className="flex px-3 pb-3">
+            <DoneEditingButton onDone={onToggle} />
+          </div>
         </div>
       )}
     </div>

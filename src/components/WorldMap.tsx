@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronLeft } from "lucide-react";
 import { useRef } from "react";
 import { useApp } from "../state/AppProvider";
 import { BubbleNode } from "./BubbleNode";
@@ -36,44 +36,54 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
 
   return (
     <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
-      <div className="flex shrink-0 items-start justify-between gap-2 px-3 pb-1">
-        <div className="min-w-0 space-y-1.5">
-          {drill.kind !== "root" && parentCrumb && (
-            <button
-              type="button"
-              onClick={() => setDrill(parentCrumb.node)}
-              className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-white px-3.5 text-[15px] font-extrabold text-slate-800 shadow-soft"
-            >
-              <ArrowRight size={20} />
-              {backLabel}
-            </button>
-          )}
-          {drill.kind !== "root" && (
-            <div className="truncate text-[13px] font-extrabold text-slate-800">
+      {drill.kind !== "root" && (
+        <div className="shrink-0 space-y-1.5 px-3 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {parentCrumb && (
+              <button
+                type="button"
+                onClick={() => setDrill(parentCrumb.node)}
+                className="card inline-flex h-11 min-w-0 max-w-[70%] shrink-0 items-center gap-1.5 px-3 text-[14px] font-extrabold text-slate-800"
+              >
+                <ArrowRight size={18} className="shrink-0" />
+                <span className="truncate">{backLabel}</span>
+              </button>
+            )}
+            <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-slate-800">
               {currentTitle}
             </div>
-          )}
-          {breadcrumbs.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
-              {breadcrumbs.map((crumb, index) => (
-                <button
-                  key={crumb.id}
-                  type="button"
-                  onClick={() => setDrill(crumb.node)}
-                  className={
-                    index === breadcrumbs.length - 1
-                      ? "font-bold text-slate-600"
-                      : "underline-offset-2 hover:underline"
-                  }
-                >
-                  {crumb.label}
-                  {index < breadcrumbs.length - 1 ? " ·" : ""}
-                </button>
-              ))}
-            </div>
+          </div>
+          {breadcrumbs.length > 2 && (
+            <nav
+              aria-label="מסלול ניווט"
+              className="-mx-3 flex items-center gap-1 overflow-x-auto px-3 no-scrollbar"
+            >
+              {breadcrumbs.map((crumb, index) => {
+                const last = index === breadcrumbs.length - 1;
+                return (
+                  <span key={crumb.id} className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={last}
+                      aria-current={last ? "page" : undefined}
+                      onClick={() => setDrill(crumb.node)}
+                      className={`h-7 max-w-[10rem] truncate rounded-full px-2.5 text-[11px] font-extrabold ${
+                        last
+                          ? "bg-gradient-to-b from-slate-700 to-slate-900 text-white shadow-sm"
+                          : "border border-slate-200/80 bg-white/90 text-slate-600 shadow-sm hover:bg-white"
+                      }`}
+                    >
+                      {index === 0 ? "🌐 " : ""}
+                      {crumb.label || "ללא שם"}
+                    </button>
+                    {!last && <ChevronLeft size={12} className="shrink-0 text-slate-300" />}
+                  </span>
+                );
+              })}
+            </nav>
           )}
         </div>
-      </div>
+      )}
 
       {needsKind ? (
         <WorldKindPicker />

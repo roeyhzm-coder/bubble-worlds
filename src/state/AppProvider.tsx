@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { EMPTY_ITEM_TOOLS, PALETTE, layoutRing, newId, todayKey } from "../lib/defaults";
+import { EMPTY_ITEM_TOOLS, PALETTE, freeSlot, layoutRing, newId, todayKey } from "../lib/defaults";
 import { DEFAULT_TRIANGLE_TYPES, clearTrianglePatch, trianglePatch } from "../lib/triangles";
 import { backupLocal, downloadBackup, loadLocal, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
@@ -77,6 +77,10 @@ interface AppContextValue {
   updateBubble: (id: string, patch: Partial<Bubble>) => void;
   deleteCategory: (id: string) => void;
   deleteBubble: (id: string) => void;
+  /** Moves items into a category/bubble container; returns how many actually moved. */
+  moveItems: (ids: string[], target: DrillNode) => number;
+  /** Creates a new list (bubble, or category at root) at a level and moves items into it. */
+  splitIntoNewList: (name: string, ids: string[], at: DrillNode) => DrillNode | null;
   moveNode: (
     type: "category" | "bubble",
     id: string,
@@ -130,6 +134,7 @@ const EXTRA_PATCH_KEYS = [
   "session_taken",
   "session_missed",
   "session_log",
+  "routine_time",
 ] as const;
 
 function clampPos(n: number): number {
@@ -476,6 +481,202 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setComposer(null);
     },
     [descendantIds, drill],
+  );
+
+  /**
+   * Re-parents items into a container (category top level or a bubble), giving each a free
+   * canvas slot and carrying descendants along when the category changes. Items that would
+   * end up inside themselves are skipped. Persists locally and to the cloud; returns the count.
+   */
+  const relocate = useCallback(
+    (
+      base: AppSnapshot,
+      ids: string[],
+      target: { categoryId: string; parent: string | null },
+    ): { next: AppSnapshot; changed: Bubble[]; moved: number } => {
+      const byId = new Map(base.bubbles.map((b) => [b.id, b]));
+      const chain = new Set<string>();
+      for (let cursor = target.parent; cursor; cursor = byId.get(cursor)?.parent_bubble_id ?? null) {
+        if (chain.has(cursor)) break;
+        chain.add(cursor);
+      }
+      const moving = ids.filter((id) => {
+        const item = byId.get(id);
+        if (!item || chain.has(id)) return false;
+        return item.parent_bubble_id !== target.parent || item.category_id !== target.categoryId;
+      });
+      const movingSet = new Set(moving);
+      const occupied = base.bubbles
+        .filter(
+          (b) =>
+            b.category_id === target.categoryId &&
+            b.parent_bubble_id === target.parent &&
+            !movingSet.has(b.id) &&
+            !b.archived,
+        )
+        .map((b) => ({ x: b.position_x, y: b.position_y }));
+      const patched = new Map<string, Bubble>();
+      for (const id of moving) {
+        const item = byId.get(id);
+        if (!item) continue;
+        const slot = freeSlot(occupied);
+        occupied.push(slot);
+        patched.set(id, {
+          ...item,
+          parent_bubble_id: target.parent,
+          category_id: target.categoryId,
+          position_x: slot.x,
+          position_y: slot.y,
+        });
+        if (item.category_id !== target.categoryId) {
+          for (const kid of descendantIds(id, base.bubbles)) {
+            const row = patched.get(kid) ?? byId.get(kid);
+            if (row) patched.set(kid, { ...row, category_id: target.categoryId });
+          }
+        }
+      }
+      // A container that had no kind yet becomes a list, since list items are landing in it.
+      let categories = base.categories;
+      if (target.parent) {
+        const holder = patched.get(target.parent) ?? byId.get(target.parent);
+        if (holder && !holder.container_type && moving.length) {
+          patched.set(holder.id, { ...holder, container_type: "list" });
+        }
+      } else if (moving.length) {
+        categories = base.categories.map((c) =>
+          c.id === target.categoryId && !c.container_type ? { ...c, container_type: "list" as const } : c,
+        );
+      }
+      const next: AppSnapshot = {
+        ...base,
+        categories,
+        bubbles: base.bubbles.map((b) => patched.get(b.id) ?? b),
+      };
+      return { next, changed: [...patched.values()], moved: moving.length };
+    },
+    [descendantIds],
+  );
+
+  const commitRelocation = useCallback(
+    (prev: AppSnapshot, result: { next: AppSnapshot; changed: Bubble[] }) => {
+      ignoreRemoteUntil.current = Date.now() + 2500;
+      setSnapshot(result.next);
+      saveLocal(result.next);
+      for (const category of result.next.categories) {
+        const before = prev.categories.find((c) => c.id === category.id);
+        if (!before || before.container_type !== category.container_type) void upsertCategory(category);
+      }
+      for (const bubble of result.changed) void upsertBubble(bubble);
+    },
+    [],
+  );
+
+  const containerFor = useCallback(
+    (node: DrillNode, base: AppSnapshot): { categoryId: string; parent: string | null } | null => {
+      if (node.kind === "category") {
+        return base.categories.some((c) => c.id === node.id) ? { categoryId: node.id, parent: null } : null;
+      }
+      if (node.kind === "bubble") {
+        const holder = base.bubbles.find((b) => b.id === node.id);
+        return holder ? { categoryId: holder.category_id, parent: holder.id } : null;
+      }
+      return null;
+    },
+    [],
+  );
+
+  const moveItems = useCallback(
+    (ids: string[], target: DrillNode) => {
+      const base = snapshotRef.current;
+      const container = containerFor(target, base);
+      if (!container) return 0;
+      const result = relocate(base, ids, container);
+      if (result.moved) commitRelocation(base, result);
+      return result.moved;
+    },
+    [commitRelocation, containerFor, relocate],
+  );
+
+  const splitIntoNewList = useCallback(
+    (name: string, ids: string[], at: DrillNode): DrillNode | null => {
+      const base = snapshotRef.current;
+      const title = name.trim() || "רשימה חדשה";
+      const now = new Date().toISOString();
+      if (at.kind === "root") {
+        const slot = freeSlot(base.categories.map((c) => ({ x: c.position_x, y: c.position_y })));
+        const category: Category = {
+          id: newId("cat"),
+          name: title,
+          color: PALETTE[base.categories.length % PALETTE.length],
+          position_x: slot.x,
+          position_y: slot.y,
+          order_index: base.categories.length,
+          created_at: now,
+          container_type: "list",
+        };
+        const withCat: AppSnapshot = { ...base, categories: [...base.categories, category] };
+        const result = relocate(withCat, ids, { categoryId: category.id, parent: null });
+        commitRelocation(base, result);
+        return { kind: "category", id: category.id };
+      }
+      const container = containerFor(at, base);
+      if (!container) return null;
+      const occupied = base.bubbles
+        .filter(
+          (b) =>
+            b.category_id === container.categoryId &&
+            b.parent_bubble_id === container.parent &&
+            !b.archived,
+        )
+        .map((b) => ({ x: b.position_x, y: b.position_y }));
+      const slot = freeSlot(occupied);
+      const bubble: Bubble = {
+        id: newId("bub"),
+        parent_bubble_id: container.parent,
+        category_id: container.categoryId,
+        title,
+        notes: "",
+        color: PALETTE[occupied.length % PALETTE.length],
+        status: "default",
+        position_x: slot.x,
+        position_y: slot.y,
+        size_multiplier: 1,
+        created_at: now,
+        is_tracking: false,
+        target_days: 30,
+        weekly_frequency: 7,
+        tracking_history: [],
+        streak_mode: "flexible",
+        container_type: "list",
+        ...EMPTY_ITEM_TOOLS,
+      };
+      // The level holding the new bubble shows bubbles, so lock an undecided kind accordingly.
+      const holderLocked = (kind: WorldKind | null) => kind ?? ("bubbles" as const);
+      const withBubble: AppSnapshot = {
+        ...base,
+        categories: container.parent
+          ? base.categories
+          : base.categories.map((c) =>
+              c.id === container.categoryId ? { ...c, container_type: holderLocked(c.container_type) } : c,
+            ),
+        bubbles: [
+          ...base.bubbles.map((b) =>
+            b.id === container.parent ? { ...b, container_type: holderLocked(b.container_type) } : b,
+          ),
+          bubble,
+        ],
+      };
+      const result = relocate(withBubble, ids, { categoryId: container.categoryId, parent: bubble.id });
+      const changed = [...result.changed];
+      if (!changed.some((b) => b.id === bubble.id)) changed.push(bubble);
+      const holder = container.parent ? result.next.bubbles.find((b) => b.id === container.parent) : undefined;
+      if (holder && holder.container_type !== base.bubbles.find((b) => b.id === holder.id)?.container_type) {
+        changed.push(holder);
+      }
+      commitRelocation(base, { next: result.next, changed });
+      return { kind: "bubble", id: bubble.id };
+    },
+    [commitRelocation, containerFor, relocate],
   );
 
   const moveNode = useCallback(
@@ -972,6 +1173,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateBubble,
       deleteCategory,
       deleteBubble,
+      moveItems,
+      splitIntoNewList,
       moveNode,
       applyStatusColor,
       markToday,
@@ -1020,6 +1223,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currentWorldKind,
       dailyViewDate,
       deleteBubble,
+      moveItems,
+      splitIntoNewList,
       deleteCategory,
       deleteDailyTask,
       deleteSuccess,

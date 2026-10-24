@@ -1,10 +1,13 @@
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeftRight, Check, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { sessionProgress } from "../lib/tracking";
 import { findTriangle } from "../lib/triangles";
 import { useApp } from "../state/AppProvider";
-import type { Bubble } from "../types";
+import type { Bubble, DrillNode } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { MoveItemsModal } from "./MoveItemsModal";
+import { Portal } from "./Portal";
 import {
   CompletionBar,
   DoneEditingButton,
@@ -26,6 +29,7 @@ export function InnerList({ items }: { items: Bubble[] }) {
     childrenOf,
     addListItem,
     deleteBubble,
+    drill,
     setDrill,
     setTriangleType,
     focusListAdd,
@@ -34,13 +38,50 @@ export function InnerList({ items }: { items: Bubble[] }) {
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  const [notice, setNotice] = useState<{ text: string; node: DrillNode } | null>(null);
   const addRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
   useEffect(() => {
     setOpenId(null);
+    setSelecting(false);
+    setSelected(new Set());
   }, [drillKey]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  // Drop selections for items that left this list (moved, deleted, archived).
+  useEffect(() => {
+    setSelected((current) => {
+      const present = new Set(items.map((item) => item.id));
+      const kept = [...current].filter((id) => present.has(id));
+      return kept.length === current.size ? current : new Set(kept);
+    });
+  }, [items]);
+
+  const exitSelecting = () => {
+    setSelecting(false);
+    setSelected(new Set());
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = items.length > 0 && selected.size === items.length;
 
   const submit = () => {
     const title = draftRef.current.trim();
@@ -96,15 +137,65 @@ export function InnerList({ items }: { items: Bubble[] }) {
         </button>
       </form>
 
-      {openId && items.length > 1 && (
-        <button
-          type="button"
-          onClick={() => setOpenId(null)}
-          className="mb-2 h-8 self-start rounded-lg px-2 text-[11px] font-extrabold text-slate-500 hover:bg-white/70"
-        >
-          כיווץ הכל
-        </button>
+      {items.length > 0 && (
+        <div className="mb-2 flex min-h-8 flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => (selecting ? exitSelecting() : (setSelecting(true), setOpenId(null)))}
+            aria-pressed={selecting}
+            className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-[11px] font-extrabold ${
+              selecting
+                ? "bg-slate-900 text-white shadow-sm"
+                : "border border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
+            }`}
+          >
+            <ArrowLeftRight size={13} />
+            {selecting ? "סיום בחירה" : "העבר / פצל פריטים"}
+          </button>
+          {selecting && (
+            <button
+              type="button"
+              onClick={() => setSelected(allSelected ? new Set() : new Set(items.map((item) => item.id)))}
+              className="h-8 rounded-full px-2.5 text-[11px] font-extrabold text-indigo-600 hover:bg-white/70"
+            >
+              {allSelected ? "נקה בחירה" : "בחר הכל"}
+            </button>
+          )}
+          {!selecting && openId && items.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setOpenId(null)}
+              className="h-8 rounded-full px-2.5 text-[11px] font-extrabold text-slate-500 hover:bg-white/70"
+            >
+              כיווץ הכל
+            </button>
+          )}
+        </div>
       )}
+
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            role="status"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mb-2 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-800 ring-1 ring-emerald-200"
+          >
+            <span className="min-w-0 flex-1 truncate">{notice.text}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setDrill(notice.node);
+                setNotice(null);
+              }}
+              className="h-7 shrink-0 rounded-full bg-white px-2.5 text-[11px] font-extrabold text-emerald-700 ring-1 ring-emerald-200"
+            >
+              מעבר ליעד ‹
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden no-scrollbar">
         {items.length === 0 && (
@@ -117,6 +208,38 @@ export function InnerList({ items }: { items: Bubble[] }) {
           const open = openId === item.id;
           const type = findTriangle(snapshot.triangleTypes, item.triangle_id);
           const plain = !type;
+          if (selecting) {
+            const checked = selected.has(item.id);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => toggleSelected(item.id)}
+                aria-pressed={checked}
+                className={`card flex min-h-12 w-full items-center gap-2 px-3 text-start ${
+                  checked ? "border-indigo-300 bg-indigo-50/80 ring-2 ring-indigo-200" : ""
+                }`}
+              >
+                <span
+                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-lg border-2 ${
+                    checked ? "border-transparent text-white" : "border-slate-300 bg-white"
+                  }`}
+                  style={checked ? accentFill(LIST_ACCENT) : undefined}
+                >
+                  {checked && <Check size={14} strokeWidth={3} />}
+                </span>
+                {type && (
+                  <span className="shrink-0 text-sm" style={{ color: type.color }}>
+                    ▼
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-slate-800">
+                  {item.title || "ללא שם"}
+                </span>
+                {kids > 0 && <span className="shrink-0 text-[10px] font-bold text-slate-400">+{kids} בפנים</span>}
+              </button>
+            );
+          }
           return (
             <div
               key={item.id}
@@ -190,13 +313,72 @@ export function InnerList({ items }: { items: Bubble[] }) {
                     />
                   </div>
                   {plain ? <NotesField item={item} /> : <TypeTools item={item} />}
-                  <DoneEditingButton onDone={() => setOpenId(null)} />
+                  <div className="flex items-center justify-between gap-2 px-3 pb-3">
+                    <button
+                      type="button"
+                      onClick={() => setMoveIds([item.id])}
+                      className="inline-flex h-8 items-center gap-1 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-extrabold text-slate-600 hover:bg-slate-50"
+                    >
+                      <ArrowLeftRight size={13} />
+                      העבר לבועה אחרת
+                    </button>
+                    <DoneEditingButton onDone={() => setOpenId(null)} />
+                  </div>
                 </div>
               )}
             </div>
           );
         })}
       </div>
+
+      <Portal>
+        <AnimatePresence>
+          {selecting && (
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 34 }}
+              className="fixed inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 mx-auto flex max-w-md items-center gap-2 rounded-2xl bg-slate-900/95 p-2 ps-4 text-white shadow-[0_18px_40px_-14px_rgba(15,23,42,0.7)] backdrop-blur"
+            >
+              <span className="min-w-0 flex-1 truncate text-[13px] font-extrabold">
+                {selected.size ? `${selected.size} נבחרו` : "בחרו פריטים להעברה"}
+              </span>
+              <button
+                type="button"
+                disabled={!selected.size}
+                onClick={() => setMoveIds([...selected])}
+                className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-600 px-3 text-[12px] font-extrabold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] disabled:from-slate-600 disabled:to-slate-600 disabled:text-slate-400"
+              >
+                העבר אל... <ArrowLeftRight size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={exitSelecting}
+                className="h-10 shrink-0 rounded-xl px-3 text-[12px] font-extrabold text-slate-300 hover:bg-white/10"
+              >
+                ביטול
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Portal>
+
+      <MoveItemsModal
+        open={Boolean(moveIds)}
+        itemIds={moveIds ?? []}
+        source={drill}
+        onClose={() => setMoveIds(null)}
+        onMoved={({ count, label, node }) => {
+          setMoveIds(null);
+          exitSelecting();
+          setOpenId(null);
+          setNotice({
+            text: count ? `הועברו ${count} פריטים ל"${label}" ✓` : "לא הועבר דבר — היעד זהה למקור",
+            node,
+          });
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

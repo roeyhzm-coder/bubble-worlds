@@ -30,6 +30,8 @@ export interface TriangleType {
 
 export type SessionOutcome = "done" | "missed";
 
+export type RoutineTime = "morning" | "noon" | "evening" | "general";
+
 export interface ActionStep {
   id: string;
   title: string;
@@ -88,6 +90,8 @@ export interface Bubble {
   session_missed?: number;
   /** Counter template: most recent outings, oldest first (capped). */
   session_log?: SessionOutcome[];
+  /** Tracking template: time-of-day routine slot (absent = "general"). */
+  routine_time?: RoutineTime;
 }
 
 /** Item fields synced via the `bubble_extras` setting instead of bw_bubbles columns. */
@@ -102,6 +106,7 @@ export type BubbleExtras = Pick<
   | "session_taken"
   | "session_missed"
   | "session_log"
+  | "routine_time"
 >;
 
 export type ColorRoles = Record<BubbleStatus, string>;

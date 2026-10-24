@@ -103,6 +103,31 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
   };
 }
 
+/**
+ * Picks the canvas position (percent) farthest from every occupied one, sampling
+ * ring slots of several sizes plus an inner grid, so new bubbles never stack.
+ */
+export function freeSlot(occupied: { x: number; y: number }[]): { x: number; y: number } {
+  if (!occupied.length) return layoutRing(0, 1);
+  const candidates: { x: number; y: number }[] = [];
+  for (const total of [4, 6, 8, 10, 12]) {
+    for (let i = 0; i < total; i += 1) candidates.push(layoutRing(i, total));
+  }
+  for (let x = 18; x <= 82; x += 16) {
+    for (let y = 18; y <= 82; y += 16) candidates.push({ x, y });
+  }
+  let best = candidates[0];
+  let bestGap = -1;
+  for (const spot of candidates) {
+    const gap = Math.min(...occupied.map((o) => Math.hypot(o.x - spot.x, o.y - spot.y)));
+    if (gap > bestGap) {
+      bestGap = gap;
+      best = spot;
+    }
+  }
+  return best;
+}
+
 export function layoutRing(index: number, total: number): { x: number; y: number } {
   const count = Math.max(total, 1);
   if (count === 1) return { x: 50, y: 44 };

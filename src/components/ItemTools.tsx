@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from "react";
 import { PALETTE, todayKey } from "../lib/defaults";
+import { ROUTINE_SLOTS, routineOf, routineSlot } from "../lib/routine";
 import {
   computeStreak,
   dateKey,
@@ -110,7 +111,7 @@ export function SavedBadge({ visible }: { visible: boolean }) {
 }
 
 /** Smooth height-animated drawer used for progressive disclosure. */
-function Drawer({ open, children }: { open: boolean; children: ReactNode }) {
+export function Drawer({ open, children }: { open: boolean; children: ReactNode }) {
   return (
     <AnimatePresence initial={false}>
       {open && (
@@ -507,16 +508,14 @@ export function TitleField({ item }: { item: Bubble }) {
 /** Explicit close affordance for an expanded card; edits are already saved live. */
 export function DoneEditingButton({ onDone }: { onDone: () => void }) {
   return (
-    <div className="flex justify-end px-3 pb-3">
-      <button
-        type="button"
-        onClick={onDone}
-        className="inline-flex h-8 items-center gap-1 rounded-full bg-slate-900 px-3 text-[11px] font-extrabold text-white shadow-sm"
-      >
-        <Check size={13} />
-        סיום עריכה
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onDone}
+      className="ms-auto inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-slate-900 px-3 text-[11px] font-extrabold text-white shadow-sm"
+    >
+      <Check size={13} />
+      סיום עריכה
+    </button>
   );
 }
 
@@ -752,7 +751,7 @@ function HistoryCalendar({ item, color }: { item: Bubble; color: string }) {
   );
 }
 
-type TrackingPanel = "target" | "frequency" | "history" | null;
+type TrackingPanel = "target" | "frequency" | "routine" | "history" | null;
 
 function TrackingTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble, markToday, unmarkToday, minusDay, resetTracking } = useApp();
@@ -783,6 +782,7 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
     [item.tracking_history, item.streak_mode, item.weekly_frequency],
   );
   const loggedDays = new Set(item.tracking_history ?? []).size;
+  const routine = routineSlot(routineOf(item));
 
   return (
     <div className="space-y-2 border-t border-slate-100 px-3 py-2.5">
@@ -840,6 +840,9 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
         <Chip active={panel === "frequency"} color={color} onClick={() => togglePanel("frequency")}>
           ⚡ תדירות: {frequency === 7 ? "כל יום" : `${frequency} בשבוע`}
         </Chip>
+        <Chip active={panel === "routine"} color={color} onClick={() => togglePanel("routine")}>
+          {routine.emoji} {routine.id === "general" ? "זמן: כללי" : routine.label}
+        </Chip>
         <Chip active={panel === "history"} color={color} onClick={() => togglePanel("history")}>
           📅 היסטוריה
         </Chip>
@@ -847,6 +850,36 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
           🔄 איפוס
         </Chip>
       </div>
+
+      <Drawer open={panel === "routine"}>
+        <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
+          <div className="text-[11px] font-bold text-slate-400">באיזה חלק של היום?</div>
+          <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="זמן ביום">
+            {ROUTINE_SLOTS.map((slot) => {
+              const active = routine.id === slot.id;
+              return (
+                <button
+                  key={slot.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    updateBubble(item.id, { routine_time: slot.id });
+                    setPanel(null);
+                  }}
+                  className={`flex h-12 flex-col items-center justify-center rounded-xl text-[11px] font-extrabold leading-tight ${
+                    active ? "text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
+                  }`}
+                  style={active ? accentFill(color) : undefined}
+                >
+                  <span className="text-base leading-none">{slot.emoji}</span>
+                  {slot.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </Drawer>
 
       <Drawer open={panel === "target"}>
         <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">

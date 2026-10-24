@@ -7,6 +7,7 @@ import {
   type Category,
   type ColorRoles,
   type PageLabels,
+  type RoutineTime,
   type WorldKind,
 } from "../types";
 import { applyDailyRollover, asDailyTasks } from "./daily";
@@ -115,6 +116,7 @@ const EXTRA_KEYS = [
   "session_taken",
   "session_missed",
   "session_log",
+  "routine_time",
 ] as const;
 
 /** Row payload for bw_bubbles: extras live in the bubble_extras setting, not in table columns. */
@@ -138,6 +140,7 @@ export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExt
     if (bubble.session_taken) extras.session_taken = bubble.session_taken;
     if (bubble.session_missed) extras.session_missed = bubble.session_missed;
     if (bubble.session_log?.length) extras.session_log = bubble.session_log;
+    if (bubble.routine_time && bubble.routine_time !== "general") extras.routine_time = bubble.routine_time;
     if (Object.keys(extras).length) out[bubble.id] = extras;
   }
   return out;
@@ -153,7 +156,12 @@ const EXTRA_DEFAULTS: Required<BubbleExtras> = {
   session_taken: 0,
   session_missed: 0,
   session_log: [],
+  routine_time: "general",
 };
+
+function asRoutineTime(value: unknown): RoutineTime {
+  return value === "morning" || value === "noon" || value === "evening" ? value : "general";
+}
 
 function asExtras(value: unknown): Record<string, BubbleExtras> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -171,6 +179,7 @@ function asExtras(value: unknown): Record<string, BubbleExtras> {
       session_taken: typeof rec.session_taken === "number" ? rec.session_taken : 0,
       session_missed: typeof rec.session_missed === "number" ? rec.session_missed : 0,
       session_log: asSessionLog(rec.session_log),
+      routine_time: asRoutineTime(rec.routine_time),
     };
   }
   return out;
