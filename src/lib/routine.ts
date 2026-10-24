@@ -1,4 +1,13 @@
-import type { Bubble, RoutineTime } from "../types";
+import type { Bubble, RoutineTime, TriangleType } from "../types";
+import { TRI_TRACK } from "./triangles";
+
+/**
+ * Time-of-day routines belong only to the blue habit tracker. Other tracking-template types
+ * (e.g. a red "להפסיק") list their items flat, without morning/noon/evening grouping.
+ */
+export function supportsRoutine(type: Pick<TriangleType, "id" | "name">): boolean {
+  return type.id === TRI_TRACK || type.name.trim() === "מעקב הרגלים";
+}
 
 export interface RoutineSlot {
   id: RoutineTime;

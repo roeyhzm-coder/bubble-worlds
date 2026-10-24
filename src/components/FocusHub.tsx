@@ -3,7 +3,7 @@ import { ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, Trash2 } from
 import { useEffect, useMemo, useState } from "react";
 import { accentFill } from "../lib/accent";
 import { sortByOrder, stepOrder } from "../lib/order";
-import { ROUTINE_SLOTS, currentRoutine, routineOf, routineSlot } from "../lib/routine";
+import { ROUTINE_SLOTS, currentRoutine, routineOf, routineSlot, supportsRoutine } from "../lib/routine";
 import { useEscape } from "../lib/useEscape";
 import { dueText } from "../lib/triangles";
 import { isItemCompleted, sessionProgress, trackingProgress } from "../lib/tracking";
@@ -23,26 +23,8 @@ import {
   accentRing,
 } from "./ItemTools";
 
-/** Per-device UI preference only (which hub sections are folded) — never user data. */
-const COLLAPSE_KEY = "bubble-worlds-hub-collapsed";
-
-function loadCollapsed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(COLLAPSE_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === "string") : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveCollapsed(keys: Set<string>): void {
-  try {
-    localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...keys]));
-  } catch {
-    /* storage unavailable */
-  }
-}
+/** Retired per-device fold preference; groups now always start collapsed. UI pref only, not user data. */
+const LEGACY_COLLAPSE_KEY = "bubble-worlds-hub-collapsed";
 
 type RoutineFilter = "all" | "now" | Exclude<RoutineTime, "general">;
 
@@ -60,7 +42,8 @@ export function FocusHub() {
   const { snapshot, setPage, setDrill, reorderItems } = useApp();
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+  // Every group and time-of-day sub-group starts collapsed; only explicitly opened keys live here.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [reordering, setReordering] = useState(false);
   // Session-only: the hub always opens on "הכל" so nothing is hidden unexpectedly.
   const [routineFilter, setRoutineFilter] = useState<RoutineFilter>("all");
@@ -70,11 +53,15 @@ export function FocusHub() {
   useEscape(reordering, () => setReordering(false));
 
   useEffect(() => {
-    saveCollapsed(collapsed);
-  }, [collapsed]);
+    try {
+      localStorage.removeItem(LEGACY_COLLAPSE_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
 
   const toggleSection = (key: string) =>
-    setCollapsed((current) => {
+    setExpanded((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -92,7 +79,7 @@ export function FocusHub() {
       .filter((group) => group.items.length > 0);
   }, [snapshot.bubbles, snapshot.triangleTypes]);
 
-  const allCollapsed = groups.length > 0 && groups.every(({ type }) => collapsed.has(type.id));
+  const allCollapsed = groups.every(({ type }) => !expanded.has(type.id));
   const activeSlot = routineFilter === "all" ? null : routineFilter === "now" ? nowSlot : routineFilter;
 
   const renderCards = (type: TriangleType, items: Bubble[]) => {
@@ -198,16 +185,22 @@ export function FocusHub() {
           {groups.length > 0 && (
             <button
               type="button"
-              onClick={() =>
-                setCollapsed((current) => {
-                  const next = new Set(current);
-                  for (const { type } of groups) {
-                    if (allCollapsed) next.delete(type.id);
-                    else next.add(type.id);
+              onClick={() => {
+                if (!allCollapsed) {
+                  setExpanded(new Set());
+                  return;
+                }
+                // "Open all" also opens the time-of-day sub-groups, so items are visible at once.
+                const next = new Set<string>();
+                for (const { type } of groups) {
+                  next.add(type.id);
+                  if (supportsRoutine(type)) {
+                    for (const slot of ROUTINE_SLOTS) next.add(`${type.id}:${slot.id}`);
                   }
-                  return next;
-                })
-              }
+                }
+                setExpanded(next);
+              }}
+              aria-label={allCollapsed ? "פתיחת כל הקבוצות" : "כיווץ כל הקבוצות"}
               className="inline-flex h-8 items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2.5 text-[11px] font-extrabold text-slate-600 hover:bg-white"
             >
               {allCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
@@ -219,8 +212,8 @@ export function FocusHub() {
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pb-24 no-scrollbar">
         {groups.map(({ type, items }) => {
-          const groupOpen = !collapsed.has(type.id);
-          const tracking = type.template === "tracking";
+          const groupOpen = expanded.has(type.id);
+          const tracking = supportsRoutine(type);
           const routineGroups = tracking
             ? ROUTINE_SLOTS.map((slot) => ({
                 slot,
@@ -308,7 +301,7 @@ export function FocusHub() {
                       )}
                       {routineGroups.map(({ slot, items: slotItems }) => {
                         const key = `${type.id}:${slot.id}`;
-                        const subOpen = !collapsed.has(key);
+                        const subOpen = expanded.has(key);
                         return (
                           <div
                             key={slot.id}

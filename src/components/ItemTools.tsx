@@ -22,7 +22,7 @@ import {
 import { accentFill, accentRing, tint } from "../lib/accent";
 import { PALETTE } from "../lib/defaults";
 import { useEscape } from "../lib/useEscape";
-import { ROUTINE_SLOTS, routineOf, routineSlot } from "../lib/routine";
+import { ROUTINE_SLOTS, routineOf, routineSlot, supportsRoutine } from "../lib/routine";
 import {
   computeStreak,
   hasDate,
@@ -595,7 +595,7 @@ export function TypeTools({
       ) : type.template === "counter" ? (
         <CounterTools item={live} color={type.color} />
       ) : (
-        <TrackingTools item={live} color={type.color} />
+        <TrackingTools item={live} color={type.color} routineEnabled={supportsRoutine(type)} />
       )}
       <NotesField item={live} />
     </>
@@ -658,7 +658,16 @@ function NumberField({
 
 type TrackingPanel = "target" | "frequency" | "routine" | "history" | null;
 
-function TrackingTools({ item, color }: { item: Bubble; color: string }) {
+function TrackingTools({
+  item,
+  color,
+  routineEnabled,
+}: {
+  item: Bubble;
+  color: string;
+  /** Only the blue habit tracker offers the time-of-day selector. */
+  routineEnabled: boolean;
+}) {
   const { updateBubble, markToday, unmarkToday, minusDay, resetTracking } = useApp();
   const [confirmReset, setConfirmReset] = useState(false);
   const [panel, setPanel] = useState<TrackingPanel>(null);
@@ -746,9 +755,11 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
         <Chip active={panel === "frequency"} color={color} onClick={() => togglePanel("frequency")}>
           ⚡ תדירות: {frequency === 7 ? "כל יום" : `${frequency} בשבוע`}
         </Chip>
-        <Chip active={panel === "routine"} color={color} onClick={() => togglePanel("routine")}>
-          {routine.emoji} {routine.id === "general" ? "זמן: כללי" : routine.label}
-        </Chip>
+        {routineEnabled && (
+          <Chip active={panel === "routine"} color={color} onClick={() => togglePanel("routine")}>
+            {routine.emoji} {routine.id === "general" ? "זמן: כללי" : routine.label}
+          </Chip>
+        )}
         <Chip active={panel === "history"} color={color} onClick={() => togglePanel("history")}>
           📅 היסטוריה
         </Chip>
@@ -757,7 +768,7 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
         </Chip>
       </div>
 
-      <Drawer open={panel === "routine"}>
+      <Drawer open={routineEnabled && panel === "routine"}>
         <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
           <div className="text-[11px] font-bold text-slate-400">באיזה חלק של היום?</div>
           <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="זמן ביום">
