@@ -1,5 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus, StickyNote, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  StickyNote,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -37,6 +46,9 @@ const FREQUENCIES = [1, 2, 3, 4, 5, 6, 7];
 const HEB_DAYS = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"];
 const MONTH_FORMAT = new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" });
 const SAVED_FLASH_MS = 1800;
+const UNDO_WINDOW_MS = 5000;
+
+type SessionSnapshot = Pick<Bubble, "session_count" | "session_taken" | "session_missed" | "session_log">;
 
 /** Rich gradient fill + inner highlight + colored drop shadow for a primary action. */
 export function accentFill(color: string): CSSProperties {
@@ -286,7 +298,33 @@ export function QuickCheck({
 }) {
   const { updateBubble, markToday, unmarkToday } = useApp();
   const [pulse, setPulse] = useState(0);
+  const [undoStack, setUndoStack] = useState<SessionSnapshot[]>([]);
+  const undoTimer = useRef<number | null>(null);
   const template = type.template;
+
+  useEffect(
+    () => () => {
+      if (undoTimer.current) window.clearTimeout(undoTimer.current);
+    },
+    [],
+  );
+
+  // Each +1 tap opens (or extends) a short window in which it can be reverted.
+  const armUndo = () => {
+    if (undoTimer.current) window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setUndoStack([]), UNDO_WINDOW_MS);
+  };
+
+  const undoLast = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const previous = undoStack[undoStack.length - 1];
+    if (!previous) return;
+    updateBubble(item.id, previous);
+    const rest = undoStack.slice(0, -1);
+    setUndoStack(rest);
+    if (rest.length) armUndo();
+    else if (undoTimer.current) window.clearTimeout(undoTimer.current);
+  };
 
   if (template === "thought") {
     return (
@@ -315,6 +353,16 @@ export function QuickCheck({
       if (doneToday) unmarkToday(item.id);
       else markToday(item.id);
     } else if (template === "counter") {
+      setUndoStack((stack) => [
+        ...stack,
+        {
+          session_count: item.session_count,
+          session_taken: item.session_taken,
+          session_missed: item.session_missed,
+          session_log: item.session_log,
+        },
+      ]);
+      armUndo();
       updateBubble(item.id, logSessionOutcome(item, "done"));
     } else {
       updateBubble(item.id, { action_done: !item.action_done });
@@ -323,65 +371,84 @@ export function QuickCheck({
   };
 
   return (
-    <motion.button
-      type="button"
-      onClick={onTap}
-      whileTap={{ scale: 0.86 }}
-      aria-label={label}
-      title={label}
-      aria-pressed={template === "counter" ? undefined : template === "tracking" ? doneToday : item.action_done}
-      className="relative grid shrink-0 place-items-center"
-      style={{ width: size + 4, height: size + 4 }}
-    >
-      <motion.span
-        key={pulse}
-        initial={pulse ? { scale: 0.82 } : false}
-        animate={{ scale: 1 }}
-        transition={{ type: "spring", stiffness: 520, damping: 14 }}
-        className="relative grid place-items-center"
-        style={{ width: size, height: size }}
+    <span className="flex shrink-0 items-center gap-1">
+      <motion.button
+        type="button"
+        onClick={onTap}
+        whileTap={{ scale: 0.86 }}
+        aria-label={label}
+        title={label}
+        aria-pressed={template === "counter" ? undefined : template === "tracking" ? doneToday : item.action_done}
+        className="relative grid shrink-0 place-items-center"
+        style={{ width: size + 4, height: size + 4 }}
       >
-        {template === "action" ? (
-          <span
-            className={`grid h-7 w-7 place-items-center rounded-lg border-2 text-sm font-black ${
-              item.action_done ? "border-transparent text-white" : "border-slate-300 bg-white"
-            }`}
-            style={item.action_done ? accentFill("#10b981") : undefined}
-          >
-            {item.action_done ? "✓" : ""}
-          </span>
-        ) : (
-          <>
-            <ProgressRing ratio={progress.ratio} size={size} color={type.color} className="absolute inset-0" />
-            {doneToday ? (
-              <span
-                className="grid place-items-center rounded-full text-white"
-                style={{ ...accentFill(type.color), width: size - 12, height: size - 12 }}
-              >
-                <Check size={Math.round(size / 3)} strokeWidth={3} />
-              </span>
-            ) : (
-              <span className="text-[10px] font-extrabold text-slate-600">{progress.done}</span>
-            )}
-          </>
-        )}
-      </motion.span>
+        <motion.span
+          key={pulse}
+          initial={pulse ? { scale: 0.82 } : false}
+          animate={{ scale: 1 }}
+          transition={{ type: "spring", stiffness: 520, damping: 14 }}
+          className="relative grid place-items-center"
+          style={{ width: size, height: size }}
+        >
+          {template === "action" ? (
+            <span
+              className={`grid h-7 w-7 place-items-center rounded-lg border-2 text-sm font-black ${
+                item.action_done ? "border-transparent text-white" : "border-slate-300 bg-white"
+              }`}
+              style={item.action_done ? accentFill("#10b981") : undefined}
+            >
+              {item.action_done ? "✓" : ""}
+            </span>
+          ) : (
+            <>
+              <ProgressRing ratio={progress.ratio} size={size} color={type.color} className="absolute inset-0" />
+              {doneToday ? (
+                <span
+                  className="grid place-items-center rounded-full text-white"
+                  style={{ ...accentFill(type.color), width: size - 12, height: size - 12 }}
+                >
+                  <Check size={Math.round(size / 3)} strokeWidth={3} />
+                </span>
+              ) : (
+                <span className="text-[10px] font-extrabold text-slate-600">{progress.done}</span>
+              )}
+            </>
+          )}
+        </motion.span>
+        <AnimatePresence>
+          {pulse > 0 && template === "counter" && (
+            <motion.span
+              key={pulse}
+              initial={{ opacity: 1, y: 0 }}
+              animate={{ opacity: 0, y: -18 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.7 }}
+              className="pointer-events-none absolute -top-1 text-[11px] font-black"
+              style={{ color: type.color }}
+            >
+              +1
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
       <AnimatePresence>
-        {pulse > 0 && template === "counter" && (
-          <motion.span
-            key={pulse}
-            initial={{ opacity: 1, y: 0 }}
-            animate={{ opacity: 0, y: -18 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.7 }}
-            className="pointer-events-none absolute -top-1 text-[11px] font-black"
-            style={{ color: type.color }}
+        {undoStack.length > 0 && (
+          <motion.button
+            type="button"
+            onClick={undoLast}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.16 }}
+            aria-label="ביטול ה-+1 האחרון"
+            className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full bg-slate-900 px-2 text-[11px] font-extrabold text-white shadow-sm"
           >
-            +1
-          </motion.span>
+            <Undo2 size={12} />
+            בטל
+          </motion.button>
         )}
       </AnimatePresence>
-    </motion.button>
+    </span>
   );
 }
 
