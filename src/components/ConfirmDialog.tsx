@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
+import { useRef } from "react";
+import { useDialogFocus, useEscape } from "../lib/useEscape";
 import { Portal } from "./Portal";
 
 interface ConfirmDialogProps {
@@ -19,6 +21,9 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
+  const panel = useRef<HTMLDivElement>(null);
+  useEscape(open, onCancel);
+  useDialogFocus(open, panel);
   return (
     <Portal>
     <AnimatePresence>
@@ -31,19 +36,25 @@ export function ConfirmDialog({
           onClick={onCancel}
         >
           <motion.div
+            ref={panel}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-dialog-title"
+            tabIndex={-1}
             initial={{ y: 16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 12, opacity: 0 }}
-            className="max-h-[min(80dvh,32rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-soft"
+            className="max-h-[min(80dvh,32rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-4 shadow-soft outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-base font-bold text-slate-800">{title}</h3>
+              <h3 id="confirm-dialog-title" className="text-base font-bold text-slate-800">{title}</h3>
               <button
                 type="button"
                 onClick={onCancel}
                 className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500"
                 aria-label="סגירה"
+                title="סגירה"
               >
                 <X size={16} />
               </button>
@@ -53,6 +64,7 @@ export function ConfirmDialog({
               <button
                 type="button"
                 onClick={onCancel}
+                data-autofocus
                 className="h-11 flex-1 rounded-xl bg-slate-100 text-sm font-semibold text-slate-600"
               >
                 ביטול

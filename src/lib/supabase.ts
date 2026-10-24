@@ -1,9 +1,10 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   BW_TABLES,
+  BUBBLE_EXTRA_KEYS,
   type AppSnapshot,
   type Bubble,
-  type BubbleExtras,
+  type BubbleExtrasEntry,
   type Category,
   type ColorRoles,
   type PageLabels,
@@ -62,10 +63,20 @@ export function sanitizeUrl(raw: string | undefined, key: string): string {
 const key = sanitizeAnonKey(import.meta.env.VITE_SUPABASE_ANON_KEY);
 const url = sanitizeUrl(import.meta.env.VITE_SUPABASE_URL, key);
 
-export const supabase: SupabaseClient | null =
-  url && key ? createClient(url, key) : null;
+const configured = Boolean(url && key);
+let clientPromise: Promise<SupabaseClient> | null = null;
 
-export const isCloudEnabled = Boolean(supabase);
+/**
+ * The Supabase SDK (~55 KB gzip) is loaded on first use instead of at startup, so the
+ * first paint never waits for it. Resolves to null when the cloud isn't configured.
+ */
+export function getClient(): Promise<SupabaseClient | null> {
+  if (!configured) return Promise.resolve(null);
+  clientPromise ??= import("@supabase/supabase-js").then(({ createClient }) => createClient(url, key));
+  return clientPromise;
+}
+
+export const isCloudEnabled = configured;
 
 type RemoteBubble = Omit<Bubble, "tracking_history"> & {
   tracking_history: unknown;
@@ -106,31 +117,24 @@ function normalizeCategory(row: Category): Category {
   return { ...row, container_type: asWorldKind(row.container_type) };
 }
 
-const EXTRA_KEYS = [
-  "challenge_done",
-  "done_offset",
-  "streak_offset",
-  "archived",
-  "session_count",
-  "session_target",
-  "session_taken",
-  "session_missed",
-  "session_log",
-  "routine_time",
-] as const;
+/** Local-only bubble fields that never exist as bw_bubbles columns. */
+const NON_COLUMN_KEYS = [...BUBBLE_EXTRA_KEYS, "extras_updated_at"] as const;
 
 /** Row payload for bw_bubbles: extras live in the bubble_extras setting, not in table columns. */
-export function toBubbleRow(bubble: Bubble): Omit<Bubble, keyof BubbleExtras> {
+export function toBubbleRow(bubble: Bubble): Omit<Bubble, (typeof NON_COLUMN_KEYS)[number]> {
   const row: Record<string, unknown> = { ...bubble };
-  for (const key of EXTRA_KEYS) delete row[key];
-  return row as Omit<Bubble, keyof BubbleExtras>;
+  for (const key of NON_COLUMN_KEYS) delete row[key];
+  return row as Omit<Bubble, (typeof NON_COLUMN_KEYS)[number]>;
 }
 
-/** Collects every non-default extra field, keyed by bubble id. */
-export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExtras> {
-  const out: Record<string, BubbleExtras> = {};
+/**
+ * Collects every non-default extra field, keyed by bubble id. Items that were ever edited
+ * keep an entry (even when back at defaults) so a reset carries its timestamp and wins merges.
+ */
+export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExtrasEntry> {
+  const out: Record<string, BubbleExtrasEntry> = {};
   for (const bubble of bubbles) {
-    const extras: BubbleExtras = {};
+    const extras: BubbleExtrasEntry = {};
     if (bubble.challenge_done) extras.challenge_done = true;
     if (bubble.done_offset) extras.done_offset = bubble.done_offset;
     if (bubble.streak_offset) extras.streak_offset = bubble.streak_offset;
@@ -141,12 +145,14 @@ export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExt
     if (bubble.session_missed) extras.session_missed = bubble.session_missed;
     if (bubble.session_log?.length) extras.session_log = bubble.session_log;
     if (bubble.routine_time && bubble.routine_time !== "general") extras.routine_time = bubble.routine_time;
+    if (typeof bubble.order_index === "number") extras.order_index = bubble.order_index;
+    if (bubble.extras_updated_at) extras.updated_at = bubble.extras_updated_at;
     if (Object.keys(extras).length) out[bubble.id] = extras;
   }
   return out;
 }
 
-const EXTRA_DEFAULTS: Required<BubbleExtras> = {
+const EXTRA_DEFAULTS: BubbleExtrasEntry = {
   challenge_done: false,
   done_offset: 0,
   streak_offset: 0,
@@ -157,15 +163,16 @@ const EXTRA_DEFAULTS: Required<BubbleExtras> = {
   session_missed: 0,
   session_log: [],
   routine_time: "general",
+  order_index: undefined,
 };
 
 function asRoutineTime(value: unknown): RoutineTime {
   return value === "morning" || value === "noon" || value === "evening" ? value : "general";
 }
 
-function asExtras(value: unknown): Record<string, BubbleExtras> {
+function asExtras(value: unknown): Record<string, BubbleExtrasEntry> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Record<string, BubbleExtras> = {};
+  const out: Record<string, BubbleExtrasEntry> = {};
   for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
     if (!raw || typeof raw !== "object") continue;
     const rec = raw as Record<string, unknown>;
@@ -180,12 +187,35 @@ function asExtras(value: unknown): Record<string, BubbleExtras> {
       session_missed: typeof rec.session_missed === "number" ? rec.session_missed : 0,
       session_log: asSessionLog(rec.session_log),
       routine_time: asRoutineTime(rec.routine_time),
+      order_index: typeof rec.order_index === "number" ? rec.order_index : undefined,
+      updated_at: typeof rec.updated_at === "number" ? rec.updated_at : undefined,
     };
   }
   return out;
 }
 
-function normalizeBubble(row: RemoteBubble, extras?: BubbleExtras): Bubble {
+/**
+ * Per-item merge of two bubble_extras maps: the newer `updated_at` wins each id (ties go to
+ * `local`), ids only one side knows are kept, and tombstoned ids are dropped.
+ */
+export function mergeExtrasMaps(
+  remote: Record<string, BubbleExtrasEntry>,
+  local: Record<string, BubbleExtrasEntry>,
+  deleted: Set<string>,
+): Record<string, BubbleExtrasEntry> {
+  const out: Record<string, BubbleExtrasEntry> = {};
+  for (const [id, entry] of Object.entries(remote)) {
+    if (!deleted.has(id)) out[id] = entry;
+  }
+  for (const [id, entry] of Object.entries(local)) {
+    const other = out[id];
+    if (!other || (entry.updated_at ?? 0) >= (other.updated_at ?? 0)) out[id] = entry;
+  }
+  return out;
+}
+
+function normalizeBubble(row: RemoteBubble, entry?: BubbleExtrasEntry): Bubble {
+  const { updated_at, ...extras } = entry ?? {};
   return {
     ...row,
     title: row.title ?? "",
@@ -197,11 +227,13 @@ function normalizeBubble(row: RemoteBubble, extras?: BubbleExtras): Bubble {
     due_label: typeof row.due_label === "string" ? row.due_label : "",
     action_done: Boolean(row.action_done),
     action_steps: asActionSteps(row.action_steps),
-    ...extras,
+    ...(entry ? extras : {}),
+    ...(updated_at ? { extras_updated_at: updated_at } : {}),
   };
 }
 
 export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
+  const supabase = await getClient();
   if (!supabase) return null;
   const [cats, bubs, settings] = await Promise.all([
     supabase.from(BW_TABLES.categories).select("*"),
@@ -233,23 +265,27 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
 }
 
 export async function upsertCategory(category: Category): Promise<void> {
+  const supabase = await getClient();
   if (!supabase) return;
   const { error } = await supabase.from(BW_TABLES.categories).upsert(category);
   if (error) console.warn("upsert category", error.message);
 }
 
 export async function upsertBubble(bubble: Bubble): Promise<void> {
+  const supabase = await getClient();
   if (!supabase) return;
   const { error } = await supabase.from(BW_TABLES.bubbles).upsert(toBubbleRow(bubble));
   if (error) console.warn("upsert bubble", error.message);
 }
 
 export async function deleteCategoryRemote(id: string): Promise<void> {
+  const supabase = await getClient();
   if (!supabase) return;
   await supabase.from(BW_TABLES.categories).delete().eq("id", id);
 }
 
 export async function deleteBubbleRemote(ids: string | string[]): Promise<void> {
+  const supabase = await getClient();
   if (!supabase) return;
   const list = Array.isArray(ids) ? ids : [ids];
   if (list.length === 0) return;
@@ -258,8 +294,42 @@ export async function deleteBubbleRemote(ids: string | string[]): Promise<void> 
 }
 
 export async function upsertSetting(key: string, value: unknown): Promise<void> {
+  const supabase = await getClient();
   if (!supabase) return;
   await supabase.from(BW_TABLES.settings).upsert({ key, value });
+}
+
+let extrasChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Fetch-before-write for bubble_extras: reads the cloud map, merges it per item with this
+ * device's entries (newer `updated_at` wins), then writes the result. Calls are serialized so
+ * two writes from this device never race each other. Returns an error message, or null.
+ * If the read fails nothing is written, so a blind overwrite can never happen.
+ */
+export function syncBubbleExtras(bubbles: Bubble[], deletedIds: string[] = []): Promise<string | null> {
+  const run = extrasChain.then(async (): Promise<string | null> => {
+    const supabase = await getClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from(BW_TABLES.settings)
+      .select("value")
+      .eq("key", "bubble_extras")
+      .maybeSingle();
+    if (error) {
+      console.warn("bubble_extras read failed; skipping write", error.message);
+      return error.message;
+    }
+    const remote = asExtras((data as { value?: unknown } | null)?.value);
+    const merged = mergeExtrasMaps(remote, collectBubbleExtras(bubbles), new Set(deletedIds));
+    const { error: writeError } = await supabase
+      .from(BW_TABLES.settings)
+      .upsert({ key: "bubble_extras", value: merged });
+    if (writeError) console.warn("bubble_extras write failed", writeError.message);
+    return writeError?.message ?? null;
+  });
+  extrasChain = run.catch(() => null);
+  return run;
 }
 
 export async function upsertColorRoles(colorRoles: ColorRoles): Promise<void> {
@@ -281,6 +351,7 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
     bubbles: snapshot.bubbles.length,
     errors: [],
   };
+  const supabase = await getClient();
   if (!supabase) {
     result.errors.push("הענן לא מוגדר (חסרים URL או anon key)");
     return result;
@@ -293,7 +364,6 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
     { key: "triangle_types", value: snapshot.triangleTypes },
     { key: "daily_tasks", value: snapshot.dailyTasks },
     { key: "successes", value: snapshot.successes },
-    { key: "bubble_extras", value: collectBubbleExtras(snapshot.bubbles) },
   ];
   // Categories first so bubbles never reference a missing parent row.
   if (snapshot.categories.length) {
@@ -306,6 +376,8 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
   }
   const { error: settingsError } = await client.from(BW_TABLES.settings).upsert(settings);
   if (settingsError) result.errors.push(`הגדרות: ${settingsError.message}`);
+  const extrasError = await syncBubbleExtras(snapshot.bubbles, snapshot.deletedIds);
+  if (extrasError) result.errors.push(`נתוני פריטים: ${extrasError}`);
   result.ok = result.errors.length === 0;
   return result;
 }
@@ -313,27 +385,28 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
 export type RemoteChangeHandler = (snapshot: AppSnapshot) => void;
 
 export function subscribeRealtime(onChange: RemoteChangeHandler): () => void {
-  if (!supabase) return () => undefined;
-  const channel = supabase
-    .channel("bubble-worlds-sync")
-    .on("postgres_changes", { event: "*", schema: "public", table: BW_TABLES.categories }, () => {
-      void fetchRemoteSnapshot().then((snap) => {
-        if (snap) onChange(snap);
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: BW_TABLES.bubbles }, () => {
-      void fetchRemoteSnapshot().then((snap) => {
-        if (snap) onChange(snap);
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: BW_TABLES.settings }, () => {
-      void fetchRemoteSnapshot().then((snap) => {
-        if (snap) onChange(snap);
-      });
-    })
-    .subscribe();
-
+  if (!configured) return () => undefined;
+  let cancelled = false;
+  let cleanup: (() => void) | null = null;
+  const refresh = () => {
+    void fetchRemoteSnapshot().then((snap) => {
+      if (snap) onChange(snap);
+    });
+  };
+  void getClient().then((client) => {
+    if (!client || cancelled) return;
+    const channel = client
+      .channel("bubble-worlds-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: BW_TABLES.categories }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: BW_TABLES.bubbles }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: BW_TABLES.settings }, refresh)
+      .subscribe();
+    cleanup = () => {
+      void client.removeChannel(channel);
+    };
+  });
   return () => {
-    void supabase.removeChannel(channel);
+    cancelled = true;
+    cleanup?.();
   };
 }

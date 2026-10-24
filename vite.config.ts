@@ -3,6 +3,20 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        // Long-lived vendor chunks: app deploys don't invalidate the cached libraries.
+        codeSplitting: {
+          groups: [
+            { name: "react-vendor", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: "motion-vendor", test: /node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/ },
+            { name: "supabase-vendor", test: /node_modules[\\/]@supabase[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

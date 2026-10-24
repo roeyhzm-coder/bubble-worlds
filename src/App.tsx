@@ -1,13 +1,31 @@
 import { Cloud, CloudOff, CloudUpload, Download, Loader2, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState, type ReactElement } from "react";
 import { DailyTasks } from "./components/DailyTasks";
-import { EditDrawer } from "./components/EditDrawer";
 import { FocusHub } from "./components/FocusHub";
 import { PageSwitcher, SwipePager } from "./components/SwipePager";
-import { Successes } from "./components/Successes";
-import { TriangleStudio } from "./components/TriangleStudio";
+import { UndoToast } from "./components/UndoToast";
 import { WorldMap } from "./components/WorldMap";
 import { useApp } from "./state/AppProvider";
+
+// Secondary pages and the editor sheet load on first use to keep startup light on mobile.
+const Successes = lazy(() => import("./components/Successes").then((m) => ({ default: m.Successes })));
+const TriangleStudio = lazy(() =>
+  import("./components/TriangleStudio").then((m) => ({ default: m.TriangleStudio })),
+);
+const EditDrawer = lazy(() => import("./components/EditDrawer").then((m) => ({ default: m.EditDrawer })));
+
+const LAZY_PAGES = new Set([3, 4]);
+
+function PageSkeleton() {
+  return (
+    <div className="space-y-2 px-3 pt-1" aria-busy="true" aria-label="טוען…">
+      <div className="h-6 w-32 animate-pulse rounded-lg bg-slate-200/70" />
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="h-14 animate-pulse rounded-2xl bg-white/80" />
+      ))}
+    </div>
+  );
+}
 
 export default function App() {
   const {
@@ -21,9 +39,22 @@ export default function App() {
     lastPush,
     pushToCloud,
     exportBackup,
+    navLock,
+    composer,
   } = useApp();
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [visited, setVisited] = useState<Set<number>>(() => new Set([page]));
+  const [editorUsed, setEditorUsed] = useState(false);
+
+  useEffect(() => {
+    setVisited((current) => (current.has(page) ? current : new Set(current).add(page)));
+  }, [page]);
+
+  // Once opened, the editor stays mounted so its exit animation can play.
+  useEffect(() => {
+    if (composer) setEditorUsed(true);
+  }, [composer]);
 
   useEffect(() => {
     if (!notice) return;
@@ -45,6 +76,9 @@ export default function App() {
     exportBackup();
     setNotice("קובץ גיבוי נשמר במכשיר");
   };
+
+  const lazyPage = (index: number, node: ReactElement) =>
+    LAZY_PAGES.has(index) && !visited.has(index) ? <PageSkeleton /> : <Suspense fallback={<PageSkeleton />}>{node}</Suspense>;
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden overflow-x-hidden bg-gradient-to-br from-slate-50 via-slate-100/70 to-indigo-50/40">
@@ -78,6 +112,7 @@ export default function App() {
               aria-busy={syncing}
               className="flex h-8 items-center gap-1 rounded-full bg-slate-900 px-3 text-[11px] font-bold text-white shadow-sm active:scale-95 disabled:opacity-50"
               aria-label="דחיפה ידנית לענן"
+              title="דחיפה ידנית לענן"
             >
               {syncing ? <Loader2 size={14} className="animate-spin" /> : <CloudUpload size={14} />}
               {syncing ? "דוחף…" : "דחוף לענן"}
@@ -95,12 +130,12 @@ export default function App() {
         <PageSwitcher page={page} onPage={setPage} />
       </header>
 
-      <SwipePager page={page} onPage={setPage} locked={dragging}>
+      <SwipePager page={page} onPage={setPage} locked={dragging || navLock}>
         <WorldMap onDragChange={setDragging} />
         <FocusHub />
         <DailyTasks />
-        <Successes />
-        <TriangleStudio />
+        {lazyPage(3, <Successes />)}
+        {lazyPage(4, <TriangleStudio />)}
       </SwipePager>
 
       {page !== 1 && page !== 3 && (
@@ -112,13 +147,19 @@ export default function App() {
             else requestCreate();
           }}
           className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_12px_26px_-10px_rgba(79,70,229,0.55)] active:scale-95"
-          aria-label="הוספה"
+          aria-label={page === 2 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
+          title={page === 2 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
         >
           <Plus size={24} />
         </button>
       )}
 
-      <EditDrawer />
+      {editorUsed && (
+        <Suspense fallback={null}>
+          <EditDrawer />
+        </Suspense>
+      )}
+      <UndoToast />
     </div>
   );
 }

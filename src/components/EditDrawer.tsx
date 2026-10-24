@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PALETTE } from "../lib/defaults";
+import { useEscape } from "../lib/useEscape";
 import { useVisualViewport } from "../lib/useVisualViewport";
 import { useApp } from "../state/AppProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -31,6 +32,7 @@ export function EditDrawer() {
       : undefined;
   const creating = composer?.mode === "create";
   const open = Boolean(composer);
+  useEscape(open, closeComposer);
 
   return (
     <Portal>
@@ -44,6 +46,9 @@ export function EditDrawer() {
           onClick={closeComposer}
         >
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={creating ? "יצירה חדשה" : "עריכה"}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -73,6 +78,7 @@ export function EditDrawer() {
                 onClick={closeComposer}
                 className="grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-slate-600"
                 aria-label="סגירה"
+                title="סגירה (Esc)"
               >
                 <X size={18} />
               </button>

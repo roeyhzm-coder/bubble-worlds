@@ -1,13 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeftRight, Check, ChevronDown, Plus, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowDownUp, ArrowLeftRight, Check, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { stepOrder } from "../lib/order";
 import { sessionProgress } from "../lib/tracking";
+import { useEscape } from "../lib/useEscape";
 import { findTriangle } from "../lib/triangles";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, DrillNode } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { MoveItemsModal } from "./MoveItemsModal";
 import { Portal } from "./Portal";
+import { ReorderButtons } from "./ReorderButtons";
 import {
   CompletionBar,
   DoneEditingButton,
@@ -23,6 +25,8 @@ import {
 
 const LIST_ACCENT = "#6366f1";
 
+const MoveItemsModal = lazy(() => import("./MoveItemsModal").then((m) => ({ default: m.MoveItemsModal })));
+
 export function InnerList({ items }: { items: Bubble[] }) {
   const {
     snapshot,
@@ -34,6 +38,9 @@ export function InnerList({ items }: { items: Bubble[] }) {
     setTriangleType,
     focusListAdd,
     drillKey,
+    page,
+    setNavLock,
+    reorderItems,
   } = useApp();
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -41,6 +48,13 @@ export function InnerList({ items }: { items: Bubble[] }) {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  const [reordering, setReordering] = useState(false);
+  // The move dialog's code loads on first use, then stays mounted for its exit animation.
+  const [moveUsed, setMoveUsed] = useState(false);
+
+  useEffect(() => {
+    if (moveIds) setMoveUsed(true);
+  }, [moveIds]);
   const [notice, setNotice] = useState<{ text: string; node: DrillNode } | null>(null);
   const addRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef(draft);
@@ -49,8 +63,18 @@ export function InnerList({ items }: { items: Bubble[] }) {
   useEffect(() => {
     setOpenId(null);
     setSelecting(false);
+    setReordering(false);
     setSelected(new Set());
   }, [drillKey]);
+
+  // A stray horizontal swipe must not carry the user away from an active selection.
+  useEffect(() => {
+    setNavLock(selecting);
+    return () => setNavLock(false);
+  }, [selecting, setNavLock]);
+
+  useEscape(selecting && !moveIds, () => exitSelecting());
+  useEscape(reordering, () => setReordering(false));
 
   useEffect(() => {
     if (!notice) return;
@@ -139,7 +163,25 @@ export function InnerList({ items }: { items: Bubble[] }) {
 
       {items.length > 0 && (
         <div className="mb-2 flex min-h-8 flex-wrap items-center gap-1.5">
-          <button
+          {!selecting && items.length > 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                setReordering((v) => !v);
+                setOpenId(null);
+              }}
+              aria-pressed={reordering}
+              className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-[11px] font-extrabold ${
+                reordering
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "border border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
+              }`}
+            >
+              <ArrowDownUp size={13} />
+              {reordering ? "סיום סידור" : "סידור"}
+            </button>
+          )}
+          {!reordering && <button
             type="button"
             onClick={() => (selecting ? exitSelecting() : (setSelecting(true), setOpenId(null)))}
             aria-pressed={selecting}
@@ -151,7 +193,7 @@ export function InnerList({ items }: { items: Bubble[] }) {
           >
             <ArrowLeftRight size={13} />
             {selecting ? "סיום בחירה" : "העבר / פצל פריטים"}
-          </button>
+          </button>}
           {selecting && (
             <button
               type="button"
@@ -161,7 +203,7 @@ export function InnerList({ items }: { items: Bubble[] }) {
               {allSelected ? "נקה בחירה" : "בחר הכל"}
             </button>
           )}
-          {!selecting && openId && items.length > 1 && (
+          {!selecting && !reordering && openId && items.length > 1 && (
             <button
               type="button"
               onClick={() => setOpenId(null)}
@@ -203,11 +245,40 @@ export function InnerList({ items }: { items: Bubble[] }) {
             הרשימה ריקה. כתבו שם ולחצו "הוסף +".
           </div>
         )}
-        {items.map((item) => {
+        {items.map((item, index) => {
           const kids = childrenOf(item.id).length;
           const open = openId === item.id;
           const type = findTriangle(snapshot.triangleTypes, item.triangle_id);
           const plain = !type;
+          if (reordering) {
+            return (
+              <motion.div
+                key={item.id}
+                layout
+                transition={{ type: "spring", stiffness: 520, damping: 38 }}
+                className="card flex min-h-14 items-center gap-2 py-1 pe-1.5 ps-3"
+              >
+                <span className="w-5 shrink-0 text-center text-[11px] font-extrabold text-slate-400">{index + 1}</span>
+                {type && (
+                  <span className="shrink-0 text-sm" style={{ color: type.color }} aria-hidden="true">
+                    ▼
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-slate-800">
+                  {item.title || "ללא שם"}
+                </span>
+                <ReorderButtons
+                  title={item.title}
+                  isFirst={index === 0}
+                  isLast={index === items.length - 1}
+                  onMove={(direction) => {
+                    const next = stepOrder(items.map((row) => row.id), item.id, direction);
+                    if (next) reorderItems(next);
+                  }}
+                />
+              </motion.div>
+            );
+          }
           if (selecting) {
             const checked = selected.has(item.id);
             return (
@@ -252,7 +323,8 @@ export function InnerList({ items }: { items: Bubble[] }) {
                     type="button"
                     onClick={() => toggle(item.id)}
                     className="grid h-10 w-8 shrink-0 place-items-center text-sm font-bold text-slate-300"
-                    aria-label="ללא משולש"
+                    aria-label={`פתיחת ${item.title || "הפריט"} (ללא משולש)`}
+                    title="ללא משולש · לחצו לפתיחה"
                   >
                     ∅
                   </button>
@@ -285,7 +357,8 @@ export function InnerList({ items }: { items: Bubble[] }) {
                     type="button"
                     onClick={() => setDrill({ kind: "bubble", id: item.id })}
                     className="grid h-10 w-8 shrink-0 place-items-center text-slate-400"
-                    aria-label="כניסה לעולם"
+                    aria-label={`כניסה אל ${item.title || "הפריט"}`}
+                    title={`כניסה אל ${item.title || "הפריט"}`}
                   >
                     ‹
                   </button>
@@ -297,7 +370,8 @@ export function InnerList({ items }: { items: Bubble[] }) {
                     setPendingDelete(item.id);
                   }}
                   className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
-                  aria-label="מחיקה"
+                  aria-label={`מחיקת ${item.title || "הפריט"}`}
+                  title="מחיקה"
                 >
                   <Trash2 size={15} />
                 </button>
@@ -333,8 +407,10 @@ export function InnerList({ items }: { items: Bubble[] }) {
 
       <Portal>
         <AnimatePresence>
-          {selecting && (
+          {selecting && page === 0 && (
             <motion.div
+              role="toolbar"
+              aria-label="פעולות על הפריטים שנבחרו"
               initial={{ y: 80, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 80, opacity: 0 }}
@@ -364,21 +440,25 @@ export function InnerList({ items }: { items: Bubble[] }) {
         </AnimatePresence>
       </Portal>
 
-      <MoveItemsModal
-        open={Boolean(moveIds)}
-        itemIds={moveIds ?? []}
-        source={drill}
-        onClose={() => setMoveIds(null)}
-        onMoved={({ count, label, node }) => {
-          setMoveIds(null);
-          exitSelecting();
-          setOpenId(null);
-          setNotice({
-            text: count ? `הועברו ${count} פריטים ל"${label}" ✓` : "לא הועבר דבר — היעד זהה למקור",
-            node,
-          });
-        }}
-      />
+      {moveUsed && (
+        <Suspense fallback={null}>
+          <MoveItemsModal
+            open={Boolean(moveIds)}
+            itemIds={moveIds ?? []}
+            source={drill}
+            onClose={() => setMoveIds(null)}
+            onMoved={({ count, label, node }) => {
+              setMoveIds(null);
+              exitSelecting();
+              setOpenId(null);
+              setNotice({
+                text: count ? `הועברו ${count} פריטים ל"${label}" ✓` : "לא הועבר דבר — היעד זהה למקור",
+                node,
+              });
+            }}
+          />
+        </Suspense>
+      )}
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

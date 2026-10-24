@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpRight, ChevronLeft, CornerLeftUp, List, Loader2, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useDialogFocus, useEscape } from "../lib/useEscape";
 import { useApp } from "../state/AppProvider";
 import type { AppSnapshot, DrillNode } from "../types";
 import { Portal } from "./Portal";
@@ -70,6 +71,9 @@ export function MoveItemsModal({
   const [level, setLevel] = useState<DrillNode>(() => parentLevel(source, snapshot));
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const panel = useRef<HTMLDivElement>(null);
+  useEscape(open, onClose);
+  useDialogFocus(open, panel);
 
   useEffect(() => {
     if (!open) return;
@@ -156,6 +160,8 @@ export function MoveItemsModal({
             onClick={onClose}
           >
             <motion.div
+              ref={panel}
+              tabIndex={-1}
               role="dialog"
               aria-modal="true"
               aria-label="העברת פריטים"
@@ -163,7 +169,7 @@ export function MoveItemsModal({
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 30, opacity: 0 }}
               transition={{ type: "spring", stiffness: 380, damping: 34 }}
-              className="flex max-h-[85dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
+              className="flex max-h-[85dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none sm:rounded-3xl"
               style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -177,6 +183,7 @@ export function MoveItemsModal({
                   onClick={onClose}
                   className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500"
                   aria-label="סגירה"
+                  title="סגירה"
                 >
                   <X size={16} />
                 </button>
@@ -220,6 +227,7 @@ export function MoveItemsModal({
                       onChange={(e) => setName(e.target.value)}
                       placeholder="למשל: שגרת בוקר"
                       aria-label="שם הרשימה החדשה"
+                      data-autofocus
                       className="h-10 min-w-0 flex-1 rounded-xl bg-white px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-indigo-100 focus:ring-2 focus:ring-indigo-300"
                     />
                     <button

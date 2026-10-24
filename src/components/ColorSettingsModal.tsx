@@ -1,6 +1,8 @@
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useRef } from "react";
 import { PALETTE } from "../lib/defaults";
+import { useDialogFocus, useEscape } from "../lib/useEscape";
 import { statusLabel } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { BubbleStatus } from "../types";
@@ -20,6 +22,9 @@ interface ColorSettingsModalProps {
 
 export function ColorSettingsModal({ open, onClose }: ColorSettingsModalProps) {
   const { snapshot, applyStatusColor } = useApp();
+  const panel = useRef<HTMLDivElement>(null);
+  useEscape(open, onClose);
+  useDialogFocus(open, panel);
 
   return (
     <Portal>
@@ -33,6 +38,11 @@ export function ColorSettingsModal({ open, onClose }: ColorSettingsModalProps) {
           onClick={onClose}
         >
           <motion.div
+            ref={panel}
+            role="dialog"
+            aria-modal="true"
+            aria-label="צבעים גלובליים"
+            tabIndex={-1}
             initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
@@ -53,6 +63,8 @@ export function ColorSettingsModal({ open, onClose }: ColorSettingsModalProps) {
                 type="button"
                 onClick={onClose}
                 className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500"
+                aria-label="סגירה"
+                title="סגירה"
               >
                 <X size={16} />
               </button>

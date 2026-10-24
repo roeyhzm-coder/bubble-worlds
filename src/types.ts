@@ -92,22 +92,35 @@ export interface Bubble {
   session_log?: SessionOutcome[];
   /** Tracking template: time-of-day routine slot (absent = "general"). */
   routine_time?: RoutineTime;
+  /** Manual position among siblings (absent = after ordered items, in creation order). */
+  order_index?: number;
+  /**
+   * Local-only clock (ms) of the last change to any extras field. Synced inside the
+   * bubble_extras entry so two devices merge per item instead of overwriting the blob.
+   */
+  extras_updated_at?: number;
 }
 
+/** Fields synced through the `bubble_extras` setting rather than bw_bubbles columns. */
+export const BUBBLE_EXTRA_KEYS = [
+  "challenge_done",
+  "done_offset",
+  "streak_offset",
+  "archived",
+  "session_count",
+  "session_target",
+  "session_taken",
+  "session_missed",
+  "session_log",
+  "routine_time",
+  "order_index",
+] as const;
+
 /** Item fields synced via the `bubble_extras` setting instead of bw_bubbles columns. */
-export type BubbleExtras = Pick<
-  Bubble,
-  | "challenge_done"
-  | "done_offset"
-  | "streak_offset"
-  | "archived"
-  | "session_count"
-  | "session_target"
-  | "session_taken"
-  | "session_missed"
-  | "session_log"
-  | "routine_time"
->;
+export type BubbleExtras = Pick<Bubble, (typeof BUBBLE_EXTRA_KEYS)[number]>;
+
+/** One bubble_extras entry on the wire: the fields plus when they last changed. */
+export type BubbleExtrasEntry = BubbleExtras & { updated_at?: number };
 
 export type ColorRoles = Record<BubbleStatus, string>;
 

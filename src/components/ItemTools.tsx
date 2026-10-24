@@ -2,29 +2,29 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   StickyNote,
   Trash2,
   Undo2,
 } from "lucide-react";
 import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { PALETTE, todayKey } from "../lib/defaults";
+import { accentFill, accentRing, tint } from "../lib/accent";
+import { PALETTE } from "../lib/defaults";
+import { useEscape } from "../lib/useEscape";
 import { ROUTINE_SLOTS, routineOf, routineSlot } from "../lib/routine";
 import {
   computeStreak,
-  dateKey,
   hasDate,
   isItemCompleted,
   itemStreak,
@@ -40,38 +40,18 @@ import type { Bubble, ToolTemplate, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ProgressRing } from "./ProgressRing";
 
+export { accentFill, accentRing };
+
+const HistoryCalendar = lazy(() => import("./HistoryCalendar"));
+
 const DAY_PRESETS = [21, 30, 60, 90, 120];
 const SESSION_PRESETS = [10, 25, 50, 100];
 const COUNTER_COLOR = "#7C3AED";
 const FREQUENCIES = [1, 2, 3, 4, 5, 6, 7];
-const HEB_DAYS = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"];
-const MONTH_FORMAT = new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" });
 const SAVED_FLASH_MS = 1800;
 const UNDO_WINDOW_MS = 5000;
 
 type SessionSnapshot = Pick<Bubble, "session_count" | "session_taken" | "session_missed" | "session_log">;
-
-/** Rich gradient fill + inner highlight + colored drop shadow for a primary action. */
-export function accentFill(color: string): CSSProperties {
-  return {
-    background: `linear-gradient(135deg, ${color} 0%, color-mix(in srgb, ${color} 72%, #0f172a) 100%)`,
-    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.28), 0 8px 18px -8px color-mix(in srgb, ${color} 80%, transparent)`,
-  };
-}
-
-/** Anchoring ring for an expanded card, tinted with its triangle color. */
-export function accentRing(color: string): CSSProperties {
-  return {
-    borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
-    borderInlineStartWidth: 4,
-    borderInlineStartColor: color,
-    boxShadow: `0 0 0 1px color-mix(in srgb, ${color} 30%, transparent), 0 12px 28px -14px color-mix(in srgb, ${color} 70%, transparent)`,
-  };
-}
-
-function tint(color: string, percent: number): string {
-  return `color-mix(in srgb, ${color} ${percent}%, white)`;
-}
 
 /** Shows a transient "saved" flag after each edit, so typing always gets visible confirmation. */
 export function useSavedFlash(): { saved: boolean; flash: () => void } {
@@ -254,6 +234,7 @@ export function TypeSwitcher({
 }) {
   const { snapshot } = useApp();
   const [open, setOpen] = useState(false);
+  useEscape(open, () => setOpen(false));
   const type = findTriangle(snapshot.triangleTypes, value);
   const color = type?.color ?? "#94a3b8";
   return (
@@ -674,82 +655,6 @@ function NumberField({
   );
 }
 
-function HistoryCalendar({ item, color }: { item: Bubble; color: string }) {
-  const { toggleTrackingDate } = useApp();
-  const [offset, setOffset] = useState(0);
-  const today = todayKey();
-  const done = useMemo(() => new Set(item.tracking_history ?? []), [item.tracking_history]);
-  const now = new Date();
-  const first = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-  const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-  const cells: (string | null)[] = [
-    ...Array.from({ length: first.getDay() }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, i) =>
-      dateKey(new Date(first.getFullYear(), first.getMonth(), i + 1)),
-    ),
-  ];
-  const monthDone = cells.filter((key) => key && done.has(key)).length;
-
-  return (
-    <div className="rounded-xl bg-white p-2 ring-1 ring-slate-200">
-      <div className="mb-1.5 flex h-9 items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setOffset((n) => Math.min(36, n + 1))}
-          className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-50"
-          aria-label="חודש קודם"
-        >
-          <ChevronRight size={16} />
-        </button>
-        <div className="text-center text-xs font-extrabold text-slate-700">
-          {MONTH_FORMAT.format(first)}
-          <span className="ms-1 text-[10px] font-bold text-slate-400">· {monthDone} ימים</span>
-        </div>
-        <button
-          type="button"
-          disabled={offset === 0}
-          onClick={() => setOffset((n) => Math.max(0, n - 1))}
-          className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-30"
-          aria-label="חודש הבא"
-        >
-          <ChevronLeft size={16} />
-        </button>
-      </div>
-      <div className="grid grid-cols-7 gap-1">
-        {HEB_DAYS.map((label) => (
-          <div key={label} className="text-center text-[10px] font-extrabold text-slate-400">
-            {label}
-          </div>
-        ))}
-        {cells.map((key, index) => {
-          if (!key) return <div key={`blank-${index}`} />;
-          const checked = done.has(key);
-          const future = key > today;
-          return (
-            <button
-              key={key}
-              type="button"
-              disabled={future}
-              onClick={() => toggleTrackingDate(item.id, key)}
-              className={`flex aspect-square flex-col items-center justify-center rounded-lg text-[11px] font-bold leading-none disabled:opacity-25 ${
-                checked ? "text-white" : "bg-slate-50 text-slate-600"
-              } ${key === today ? "ring-2 ring-slate-400" : ""}`}
-              style={checked ? accentFill(color) : undefined}
-              aria-label={`${key} ${checked ? "בוצע" : "לא בוצע"}`}
-              aria-pressed={checked}
-            >
-              <span>{Number(key.slice(8))}</span>
-              {checked && <span className="text-[9px]">✓</span>}
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-1.5 text-center text-[10px] font-bold text-slate-400">
-        לחיצה על יום מסמנת או מבטלת ביצוע
-      </div>
-    </div>
-  );
-}
 
 type TrackingPanel = "target" | "frequency" | "routine" | "history" | null;
 
@@ -757,6 +662,7 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble, markToday, unmarkToday, minusDay, resetTracking } = useApp();
   const [confirmReset, setConfirmReset] = useState(false);
   const [panel, setPanel] = useState<TrackingPanel>(null);
+  useEscape(panel !== null, () => setPanel(null));
   const [customDays, setCustomDays] = useState(String(item.target_days || 30));
 
   useEffect(() => {
@@ -931,7 +837,9 @@ function TrackingTools({ item, color }: { item: Bubble; color: string }) {
 
       <Drawer open={panel === "history"}>
         <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
-          <HistoryCalendar item={item} color={color} />
+          <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-white ring-1 ring-slate-200" aria-label="טוען לוח…" />}>
+            <HistoryCalendar item={item} color={color} />
+          </Suspense>
           <NumberField
             label="ימים שהושלמו"
             value={progress.done}
@@ -1018,6 +926,7 @@ function CounterTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble } = useApp();
   const [confirmReset, setConfirmReset] = useState(false);
   const [panel, setPanel] = useState<CounterPanel>(null);
+  useEscape(panel !== null, () => setPanel(null));
   const sessionUndo = useSessionUndo(item);
   const progress = sessionProgress(item);
   const odds = sessionOpportunities(item);

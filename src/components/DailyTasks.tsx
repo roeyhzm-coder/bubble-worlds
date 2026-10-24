@@ -110,7 +110,8 @@ export function DailyTasks() {
                     deleteDailyTask(item.id);
                   }}
                   className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
-                  aria-label="מחיקה"
+                  aria-label={`מחיקת המשימה ${item.text || index + 1}`}
+                  title="מחיקה"
                 >
                   <Trash2 size={15} />
                 </button>

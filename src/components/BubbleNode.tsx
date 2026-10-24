@@ -136,7 +136,8 @@ export function BubbleNode({
         </div>
         <button
           type="button"
-          aria-label="עריכה"
+          aria-label={`עריכת ${title || "הבועה"}`}
+          title="עריכה"
           onPointerDown={(e) => {
             e.stopPropagation();
             blockTap.current = true;

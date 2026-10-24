@@ -92,7 +92,8 @@ export function TriangleStudio() {
                     setPendingDelete(type.id);
                   }}
                   className="grid h-9 w-8 place-items-center text-rose-400"
-                  aria-label="מחיקה"
+                  aria-label="מחיקת סוג המשולש"
+                  title="מחיקה"
                 >
                   <Trash2 size={15} />
                 </button>

@@ -128,6 +128,7 @@ export function PageSwitcher({
         onClick={() => setEditing((v) => !v)}
         className="card grid h-11 w-11 shrink-0 place-items-center text-slate-500"
         aria-label={editing ? "סיום עריכת שמות" : "עריכת שמות הלשוניות"}
+        title={editing ? "סיום עריכת שמות" : "עריכת שמות הלשוניות"}
       >
         {editing ? <Check size={16} /> : <Pencil size={15} />}
       </button>

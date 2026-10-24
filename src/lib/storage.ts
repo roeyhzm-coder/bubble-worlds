@@ -1,4 +1,4 @@
-import type { AppSnapshot } from "../types";
+import { BUBBLE_EXTRA_KEYS, type AppSnapshot, type Bubble } from "../types";
 import { mergeDailyTasks } from "./daily";
 import { EMPTY_SNAPSHOT, STORAGE_KEY, mergeSeed } from "./defaults";
 import { mergeSuccesses } from "./successes";
@@ -100,6 +100,28 @@ function mergeById<T extends { id: string }>(
 }
 
 /**
+ * Extras fields follow the side whose `extras_updated_at` is newer, per item, regardless of
+ * `prefer`, so edits from another device are never lost to a stale local copy (or vice versa).
+ * Equal clocks (including legacy items with none) keep the `prefer` result untouched.
+ */
+function mergeBubbleExtras(merged: Bubble[], local: Bubble[], remote: Bubble[]): Bubble[] {
+  const localById = new Map(local.map((item) => [item.id, item]));
+  const remoteById = new Map(remote.map((item) => [item.id, item]));
+  return merged.map((item) => {
+    const l = localById.get(item.id);
+    const r = remoteById.get(item.id);
+    if (!l || !r) return item;
+    const lt = l.extras_updated_at ?? 0;
+    const rt = r.extras_updated_at ?? 0;
+    if (lt === rt) return item;
+    const winner = lt > rt ? l : r;
+    const next: Record<string, unknown> = { ...item, extras_updated_at: Math.max(lt, rt) };
+    for (const key of BUBBLE_EXTRA_KEYS) next[key] = winner[key];
+    return next as unknown as Bubble;
+  });
+}
+
+/**
  * Never drops local data: every local category, bubble, task, success and setting survives.
  * Remote-only items are added. `prefer` only decides whose field values win on shared ids:
  * "local" (default, startup + manual push) or "remote" (live updates from another device).
@@ -120,7 +142,11 @@ export function mergeSnapshots(
 
   return mergeSeed({
     categories: mergeById(local.categories, remote.categories, deleted, prefer),
-    bubbles: mergeById(local.bubbles, remote.bubbles, deleted, prefer),
+    bubbles: mergeBubbleExtras(
+      mergeById(local.bubbles, remote.bubbles, deleted, prefer),
+      local.bubbles,
+      remote.bubbles,
+    ),
     colorRoles: pick(local.colorRoles, remote.colorRoles),
     pageLabels: pick(local.pageLabels, remote.pageLabels),
     listViews: pick(local.listViews, remote.listViews),
