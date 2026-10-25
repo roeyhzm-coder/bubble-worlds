@@ -1064,6 +1064,7 @@ type MultiDailyPanel = "base" | "target" | "frequency" | "routine" | "history" |
 /** Cyan multi-per-day habit: N sessions make a day; completed days feed the shared streak engine. */
 function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble, applyDayAction, setDailyBase, resetMultiDaily } = useApp();
+  const [confirmReset, setConfirmReset] = useState(false);
   const [panel, setPanel] = useState<MultiDailyPanel>(null);
   useEscape(panel !== null, () => setPanel(null));
   const dayUndo = useDayUndo(item);
@@ -1207,7 +1208,7 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
         <Chip active={panel === "history"} color={accent} onClick={() => togglePanel("history")}>
           📅 היסטוריה
         </Chip>
-        <Chip active={false} color={accent} danger onClick={() => resetMultiDaily(item.id)}>
+        <Chip active={false} color={accent} danger onClick={() => setConfirmReset(true)}>
           🔄 איפוס
         </Chip>
       </div>
@@ -1266,6 +1267,18 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
       </Drawer>
 
       <CompleteToggle item={item} label="סיימתי את האתגר ✓" />
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="לאפס את המעקב?"
+        body="ההיסטוריה, הספירה היומית והיעדים לפי יום יימחקו. ברירת המחדל ליום, היעד וההערות נשמרים."
+        confirmLabel="איפוס"
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => {
+          resetMultiDaily(item.id);
+          setConfirmReset(false);
+        }}
+      />
     </div>
   );
 }
