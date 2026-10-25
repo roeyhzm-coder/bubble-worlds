@@ -2,18 +2,18 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { accentFill, tint } from "../lib/accent";
 import { todayKey } from "../lib/defaults";
-import { MAX_DAILY, dateKey, dayProgress, type DayAction } from "../lib/tracking";
+import { MAX_DAILY, dateKey, dayFraction, dayProgress, formatCredit, type DayAction } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { Bubble } from "../types";
 
 const HEB_DAYS = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"];
 const MONTH_FORMAT = new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" });
-const PARTIAL_COLOR = "#f59e0b";
 
 /**
  * Month grid of check-ins; loaded lazily from the history drawer. Plain mode: tapping a past
- * day toggles it. Multi-daily mode: each day shows done/target, a tap selects it, a second tap
- * cycles its count, and steppers below adjust that day's count and target.
+ * day toggles it. Multi-daily mode: each day shows done/target, tinted in proportion to how much
+ * of it was done; a tap selects it, a second tap cycles its count, and steppers below adjust
+ * that day's count and target.
  */
 export default function HistoryCalendar({
   item,
@@ -38,7 +38,11 @@ export default function HistoryCalendar({
       dateKey(new Date(first.getFullYear(), first.getMonth(), i + 1)),
     ),
   ];
-  const monthDone = cells.filter((key) => key && done.has(key)).length;
+  const monthDone = multiDaily
+    ? formatCredit(
+        Math.round(cells.reduce((sum, key) => sum + (key && key <= today ? dayFraction(item, key) : 0), 0) * 10) / 10,
+      )
+    : cells.filter((key) => key && done.has(key)).length;
   const picked = dayProgress(item, selected);
   const act = (action: DayAction) => applyDayAction(item.id, selected, action);
 
@@ -87,6 +91,7 @@ export default function HistoryCalendar({
           const future = key > today;
           const day = multiDaily ? dayProgress(item, key) : null;
           const checked = day ? day.complete : done.has(key);
+          const share = day ? Math.min(1, day.count / day.target) : 0;
           const partial = Boolean(day && !day.complete && day.count > 0);
           const isSelected = multiDaily && key === selected;
           return (
@@ -96,10 +101,14 @@ export default function HistoryCalendar({
               disabled={future}
               onClick={() => onDay(key)}
               className={`flex aspect-square flex-col items-center justify-center rounded-lg text-[11px] font-bold leading-none disabled:opacity-25 ${
-                checked ? "text-white" : partial ? "text-amber-800" : "bg-slate-50 text-slate-600"
+                checked ? "text-white" : partial ? "text-slate-800" : "bg-slate-50 text-slate-600"
               } ${isSelected ? "ring-2 ring-slate-800" : key === today ? "ring-2 ring-slate-400" : ""}`}
               style={
-                checked ? accentFill(color) : partial ? { background: tint(PARTIAL_COLOR, 22) } : undefined
+                checked
+                  ? accentFill(color)
+                  : partial
+                    ? { background: tint(color, 14 + Math.round(share * 56)) }
+                    : undefined
               }
               aria-label={
                 day
@@ -127,11 +136,15 @@ export default function HistoryCalendar({
             <span>{selected === today ? "היום" : selected.split("-").reverse().join(".")}</span>
             <span
               className={`rounded-full px-1.5 py-0.5 ${picked.complete ? "text-white" : "text-slate-700"}`}
-              style={picked.complete ? accentFill(color) : { background: tint(PARTIAL_COLOR, picked.count ? 22 : 0) }}
+              style={
+                picked.complete
+                  ? accentFill(color)
+                  : { background: tint(color, picked.count ? 14 + Math.round((picked.count / picked.target) * 56) : 0) }
+              }
               dir="ltr"
             >
               {picked.count}/{picked.target}
-              {picked.complete ? " ✓" : ""}
+              {picked.complete ? " ✓" : ` · ${Math.round((picked.count / picked.target) * 100)}%`}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-1.5">

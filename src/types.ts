@@ -161,6 +161,8 @@ export interface DailyTask {
   date: string;
   rollover_count: number;
   order_index: number;
+  /** ms of the last create / edit / toggle / move; the newer copy wins a cloud merge. */
+  updated_at?: number;
 }
 
 export interface AppSnapshot {

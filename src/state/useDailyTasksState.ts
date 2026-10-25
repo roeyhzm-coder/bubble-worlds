@@ -21,9 +21,12 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
   const { recordUndo } = undo;
   const [dailyViewDate, setDailyViewDateState] = useState(() => todayKey());
 
-  const persistDaily = useCallback((dailyTasks: DailyTask[]) => {
+  const persistDaily = useCallback((dailyTasks: DailyTask[], deletedIds: string[] = []) => {
     // No blank trimming here: a row just added with "+" must survive until it gets text.
-    const next = applyDailyRollover(dailyTasks, todayKey(), { trimBlanks: false });
+    const next = applyDailyRollover(dailyTasks, todayKey(), {
+      trimBlanks: false,
+      deleted: new Set(deletedIds),
+    });
     void upsertSetting("daily_tasks", next);
     return next;
   }, []);
@@ -31,7 +34,10 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
   const setDailyViewDate = useCallback(
     (date: string) => {
       setDailyViewDateState(date);
-      mutate((prev) => ({ ...prev, dailyTasks: persistDaily(ensureDateSlots(prev.dailyTasks, date)) }));
+      mutate((prev) => {
+        const deleted = new Set(prev.deletedIds ?? []);
+        return { ...prev, dailyTasks: persistDaily(ensureDateSlots(prev.dailyTasks, date, deleted), prev.deletedIds) };
+      });
     },
     [mutate, persistDaily],
   );
@@ -41,7 +47,10 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
     const id = emptyDailyTask(date, 0).id;
     mutate((prev) => {
       const order_index = dateTasks(prev.dailyTasks, date).length;
-      const dailyTasks = persistDaily([...prev.dailyTasks, { ...emptyDailyTask(date, order_index), id }]);
+      const dailyTasks = persistDaily(
+        [...prev.dailyTasks, { ...emptyDailyTask(date, order_index), id }],
+        prev.deletedIds,
+      );
       return { ...prev, dailyTasks };
     });
     return id;
@@ -51,7 +60,10 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
     (id: string, patch: Partial<DailyTask>) => {
       mutate((prev) => ({
         ...prev,
-        dailyTasks: persistDaily(prev.dailyTasks.map((item) => (item.id === id ? { ...item, ...patch } : item))),
+        dailyTasks: persistDaily(
+          prev.dailyTasks.map((item) => (item.id === id ? { ...item, ...patch, updated_at: Date.now() } : item)),
+          prev.deletedIds,
+        ),
       }));
     },
     [mutate, persistDaily],
@@ -62,8 +74,14 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       const current = snapshotRef.current;
       const task = current.dailyTasks.find((item) => item.id === id);
       if (!task) return;
-      // No refill: deleting rows may leave fewer than 6 for the day.
-      const next = { ...current, dailyTasks: persistDaily(current.dailyTasks.filter((item) => item.id !== id)) };
+      // The id becomes a tombstone (synced as deleted_ids), so no device's stale copy, and no
+      // rolled-over "!" copy of it, can bring the task back. No refill: fewer than 6 rows may stay.
+      const deletedIds = [...new Set([...(current.deletedIds ?? []), id])];
+      const dailyTasks = persistDaily(
+        current.dailyTasks.filter((item) => item.id !== id),
+        deletedIds,
+      );
+      const next = { ...current, dailyTasks, deletedIds };
       commit(next, 900);
       // Blank rows vanish without ceremony; only real tasks get an undo toast.
       if (task.text.trim()) recordUndo(`המשימה "${task.text.trim()}" נמחקה`, current, next);
@@ -76,7 +94,10 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       mutate((prev) => ({
         ...prev,
         dailyTasks: persistDaily(
-          prev.dailyTasks.map((item) => (item.id === id ? { ...item, completed: !item.completed } : item)),
+          prev.dailyTasks.map((item) =>
+            item.id === id ? { ...item, completed: !item.completed, updated_at: Date.now() } : item,
+          ),
+          prev.deletedIds,
         ),
       }));
     },
@@ -101,10 +122,11 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
                   date,
                   rollover_count: date > today ? 0 : item.rollover_count,
                   order_index: slot ? slot.order_index : target.length,
+                  updated_at: Date.now(),
                 }
               : item,
           );
-        return { ...prev, dailyTasks: persistDaily(updated) };
+        return { ...prev, dailyTasks: persistDaily(updated, prev.deletedIds) };
       });
     },
     [mutate, persistDaily],

@@ -139,7 +139,7 @@ export function TriangleStudio() {
                             : "bg-slate-50 text-slate-600"
                         }`}
                       >
-                        {templateLabel(template)}
+                        {template === "multi_daily" ? `${templateLabel(template)} (יחסי)` : templateLabel(template)}
                       </button>
                     ))}
                   </div>

@@ -6,6 +6,7 @@ import {
   isCloudEnabled,
   pushSnapshotToCloud,
   subscribeRealtime,
+  syncDeletedIds,
   type PushResult,
 } from "../lib/supabase";
 import type { Store } from "./store";
@@ -60,6 +61,19 @@ export function useCloudSync(store: Store): CloudSync {
   useEffect(() => {
     saveLocal(snapshot);
   }, [snapshot]);
+
+  // Every new tombstone (delete) or removed one (undo) is merged into the shared deleted_ids,
+  // so other devices drop the item instead of syncing their stale copy back.
+  const syncedTombstones = useRef(new Set(snapshot.deletedIds ?? []));
+  useEffect(() => {
+    const next = new Set(snapshot.deletedIds ?? []);
+    const prev = syncedTombstones.current;
+    const added = [...next].some((id) => !prev.has(id));
+    const restored = [...prev].filter((id) => !next.has(id));
+    if (!added && !restored.length) return;
+    syncedTombstones.current = next;
+    if (isCloudEnabled) void syncDeletedIds([...next], restored);
+  }, [snapshot.deletedIds]);
 
   useEffect(() => {
     let cancelled = false;

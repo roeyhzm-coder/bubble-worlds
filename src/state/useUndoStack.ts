@@ -103,7 +103,13 @@ export function useUndoStack(store: Store): UndoStack {
       bubbleRows.restored.map((row) => [row.id, { ...row, extras_updated_at: now }]),
     );
     const bubbles = bubbleRows.list.map((row) => stamped.get(row.id) ?? row);
-    const daily = restoreRows(current.dailyTasks, entry.before.dailyTasks, entry.after.dailyTasks);
+    const dailyRows = restoreRows(current.dailyTasks, entry.before.dailyTasks, entry.after.dailyTasks);
+    // A restored task outranks the stale copies other devices still hold.
+    const restoredDaily = new Set(dailyRows.restored.map((row) => row.id));
+    const daily = {
+      ...dailyRows,
+      list: dailyRows.list.map((row) => (restoredDaily.has(row.id) ? { ...row, updated_at: now } : row)),
+    };
     const wins = restoreRows(current.successes, entry.before.successes, entry.after.successes);
 
     const back = new Set([

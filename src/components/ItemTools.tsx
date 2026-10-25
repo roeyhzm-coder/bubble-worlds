@@ -25,6 +25,7 @@ import { useEscape } from "../lib/useEscape";
 import { ROUTINE_SLOTS, routineOf, routineSlot, supportsRoutine } from "../lib/routine";
 import {
   MAX_DAILY,
+  activeDays,
   baseDailyTarget,
   computeStreak,
   dayProgress,
@@ -32,6 +33,10 @@ import {
   isItemCompleted,
   itemStreak,
   logSessionOutcome,
+  formatCredit,
+  multiDailyProgress,
+  rawMultiDailyCredit,
+  setDayProgress,
   sessionOpportunities,
   sessionProgress,
   trackingProgress,
@@ -986,20 +991,27 @@ function useDayUndo(item: Bubble): { canUndo: boolean; plusOne: () => void; undo
   return { canUndo: stack.length > 0, plusOne, undo };
 }
 
-/** Collapsed-row summary for multi-daily items: today's sessions and completed days. */
+/** Collapsed-row summary for multi-daily items: today's share of its target and the day credit. */
 export function MultiDailyBadge({ item, color }: { item: Bubble; color: string }) {
-  const today = dayProgress(item);
-  const days = trackingProgress(item);
+  const progress = multiDailyProgress(item);
+  const { count, target, fraction } = progress.today;
+  const complete = count >= target;
   return (
     <span className="inline-flex min-w-0 shrink-0 items-center gap-1 text-[11px] font-extrabold">
       <span
-        className={`rounded-full px-1.5 py-0.5 ${today.complete ? "text-white" : "text-slate-700"}`}
-        style={today.complete ? accentFill(color) : { background: tint(color, 16) }}
+        className={`rounded-full px-1.5 py-0.5 ${complete ? "text-white" : "text-slate-700"}`}
+        style={complete ? accentFill(color) : { background: tint(color, 16) }}
       >
-        {today.count}/{today.target} היום
+        <span dir="ltr">
+          {count}/{target}
+        </span>{" "}
+        היום ({Math.round(fraction * 100)}%)
       </span>
       <span className="text-slate-400">
-        {days.done}/{days.target} ימים
+        <span dir="ltr">
+          {formatCredit(progress.credit)}/{progress.target}
+        </span>{" "}
+        ימים
       </span>
     </span>
   );
@@ -1057,11 +1069,70 @@ function Stepper({
   );
 }
 
+/** One of the two side-by-side "today" counters: a question, a big [-] n [+], and extras. */
+function TodayCounter({
+  question,
+  value,
+  min,
+  color,
+  onStep,
+  children,
+}: {
+  question: string;
+  value: number;
+  min: number;
+  color: string;
+  onStep: (direction: -1 | 1) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 rounded-xl bg-white p-2 ring-1 ring-slate-200">
+      <div className="text-center text-[11px] font-extrabold leading-tight text-slate-600">{question}</div>
+      <div className="flex h-11 items-center justify-between gap-1">
+        <button
+          type="button"
+          onClick={() => onStep(-1)}
+          disabled={value <= min}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-50 text-lg font-black text-slate-600 disabled:opacity-30"
+          aria-label={`הפחתה: ${question}`}
+        >
+          −
+        </button>
+        <motion.span
+          key={value}
+          initial={{ scale: 0.7, opacity: 0.4 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 520, damping: 16 }}
+          className="min-w-0 text-center text-2xl font-black"
+          style={{ color }}
+          aria-live="polite"
+        >
+          {value}
+        </motion.span>
+        <button
+          type="button"
+          onClick={() => onStep(1)}
+          disabled={value >= MAX_DAILY}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-50 text-lg font-black text-slate-600 disabled:opacity-30"
+          aria-label={`הוספה: ${question}`}
+        >
+          +
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 const DAILY_PRESETS = [1, 2, 3, 4, 5, 6];
+const TODAY_TARGET_PRESETS = [2, 3, 4, 5, 6];
 
 type MultiDailyPanel = "base" | "target" | "frequency" | "routine" | "history" | null;
 
-/** Cyan multi-per-day habit: N sessions make a day; completed days feed the shared streak engine. */
+/**
+ * Cyan multi-per-day habit with proportional credit: each day earns done/target of a day
+ * (2 of 3 → 0.67), summed toward the day goal. Full days also feed the shared check-in history.
+ */
 function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
   const { updateBubble, applyDayAction, setDailyBase, resetMultiDaily } = useApp();
   const [confirmReset, setConfirmReset] = useState(false);
@@ -1074,30 +1145,37 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
   const togglePanel = (next: Exclude<MultiDailyPanel, null>) =>
     setPanel((current) => (current === next ? null : next));
 
-  const today = dayProgress(item, date);
+  const progress = multiDailyProgress(item);
+  const { count, target, fraction } = progress.today;
+  const complete = count >= target;
+  const percent = Math.round(fraction * 100);
   const base = baseDailyTarget(item);
-  const progress = trackingProgress(item);
   const frequency = Math.min(7, Math.max(1, item.weekly_frequency || 7));
   const week = weeklyProgress(item);
   const streak = itemStreak(item);
   const baseStreak = useMemo(
-    () => computeStreak(item.tracking_history, item.streak_mode, item.weekly_frequency),
-    [item.tracking_history, item.streak_mode, item.weekly_frequency],
+    () => computeStreak(activeDays(item), item.streak_mode, item.weekly_frequency),
+    [item],
   );
-  const loggedDays = new Set(item.tracking_history ?? []).size;
   const routine = routineSlot(routineOf(item));
-  const slots = Math.max(today.target, today.count);
+  const segments = Math.max(target, count);
+  const setTodayTarget = (next: number) => updateBubble(item.id, setDayProgress(item, date, count, next));
 
   return (
     <div className="space-y-2 border-t px-3 py-2.5" style={{ borderColor: tint(accent, 20) }}>
       <div className="flex items-center gap-2.5">
         <div className="relative grid h-11 w-11 shrink-0 place-items-center">
           <ProgressRing ratio={progress.ratio} size={44} color={accent} className="absolute inset-0" />
-          <span className="text-[10px] font-extrabold text-slate-700">{progress.done}</span>
+          <span className="text-[10px] font-extrabold text-slate-700" dir="ltr">
+            {formatCredit(progress.credit)}
+          </span>
         </div>
         <div className="min-w-0 flex-1 text-[12px] font-bold leading-tight text-slate-500">
           <div className="text-slate-800">
-            {progress.done}/{progress.target} ימים
+            <span dir="ltr">
+              {formatCredit(progress.credit)} / {progress.target}
+            </span>{" "}
+            ימים (יחסי)
           </div>
           <div>🔥 רצף {streak}</div>
         </div>
@@ -1112,11 +1190,12 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
         )}
       </div>
 
-      <div className="space-y-2 rounded-xl p-2" style={{ background: tint(accent, 8) }}>
-        <div className="flex flex-wrap items-center justify-between gap-1.5">
-          <div className="flex h-7 items-center gap-1.5">
-            <span className="text-[12px] font-extrabold text-slate-700">היום</span>
-            {today.complete && (
+      <div className="space-y-2 rounded-2xl p-2 ring-1" style={{ background: tint(accent, 10), ["--tw-ring-color" as string]: tint(accent, 35) }}>
+        <div className="flex h-7 items-center justify-between gap-1.5">
+          <span className="text-[13px] font-black text-slate-800">היום</span>
+          <span className="flex items-center gap-1">
+            <UndoButton visible={dayUndo.canUndo} onUndo={dayUndo.undo} />
+            {complete && (
               <span
                 className="rounded-full px-1.5 py-0.5 text-[10px] font-extrabold text-white"
                 style={accentFill(accent)}
@@ -1124,89 +1203,89 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
                 הושלם ✓
               </span>
             )}
-            <UndoButton visible={dayUndo.canUndo} onUndo={dayUndo.undo} />
-          </div>
-          <Stepper
-            label="יעד להיום:"
-            value={today.target}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1.5">
+          <TodayCounter
+            question="כמה פעמים היעד היום?"
+            value={target}
             min={1}
-            max={MAX_DAILY}
             color={accent}
             onStep={(direction) => applyDayAction(item.id, date, direction > 0 ? "target_plus" : "target_minus")}
+          >
+            <div className="flex flex-wrap justify-center gap-1">
+              {TODAY_TARGET_PRESETS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setTodayTarget(n)}
+                  aria-pressed={target === n}
+                  className={`grid h-7 w-7 place-items-center rounded-lg text-[11px] font-extrabold ${
+                    target === n ? "text-white" : "bg-slate-50 text-slate-600"
+                  }`}
+                  style={target === n ? accentFill(accent) : undefined}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </TodayCounter>
+          <TodayCounter
+            question="כמה פעמים ביצעתי היום?"
+            value={count}
+            min={0}
+            color={accent}
+            onStep={(direction) => (direction > 0 ? dayUndo.plusOne() : applyDayAction(item.id, date, "minus"))}
           />
         </div>
-        <div className="flex flex-wrap gap-1.5" aria-label={`בוצע ${today.count} מתוך ${today.target} היום`}>
-          {Array.from({ length: slots }, (_, index) => {
-            const filled = index < today.count;
-            return (
-              <motion.button
-                key={index}
-                type="button"
-                layout
-                whileTap={{ scale: 0.9 }}
-                disabled={filled}
-                onClick={dayUndo.plusOne}
-                className={`inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-extrabold ${
-                  filled ? "text-white" : "border border-dashed bg-white text-slate-500"
-                }`}
-                style={filled ? accentFill(accent) : { borderColor: tint(accent, 60) }}
-                aria-label={filled ? `פעם ${index + 1} בוצעה` : `סימון פעם ${index + 1}`}
-              >
-                {filled ? "✓" : "○"} פעם {index + 1}
-              </motion.button>
-            );
-          })}
-          <motion.button
-            type="button"
-            layout
-            whileTap={{ scale: 0.9 }}
-            onClick={dayUndo.plusOne}
-            disabled={today.count >= MAX_DAILY}
-            className="inline-flex h-8 items-center gap-0.5 rounded-full bg-white px-2.5 text-[11px] font-extrabold ring-1 disabled:opacity-40"
-            style={{ color: accent, ["--tw-ring-color" as string]: tint(accent, 50) }}
-          >
-            <Plus size={12} strokeWidth={3} />
-            הוסף פעם להיום
-          </motion.button>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-[7fr_3fr] gap-1.5">
         <motion.button
           type="button"
           whileTap={{ scale: 0.97 }}
           onClick={dayUndo.plusOne}
-          disabled={today.count >= MAX_DAILY}
-          className="flex h-11 items-center justify-center gap-1 rounded-xl px-1 text-[13px] font-extrabold text-white disabled:opacity-60"
+          disabled={count >= MAX_DAILY}
+          className="flex h-12 w-full items-center justify-center gap-1 rounded-xl px-2 text-[14px] font-black text-white disabled:opacity-60"
           style={accentFill(accent)}
         >
-          ✓ ביצעתי (+1) · ({today.count}/{today.target} היום)
+          ✓ ביצעתי פעם נוספת (+1)
         </motion.button>
-        <button
-          type="button"
-          onClick={() => applyDayAction(item.id, date, "minus")}
-          disabled={today.count === 0}
-          className="h-11 rounded-xl bg-white text-[12px] font-extrabold text-slate-600 ring-1 ring-slate-200 disabled:opacity-40"
-        >
-          -1 החסר מהיום
-        </button>
+
+        <div className="space-y-1">
+          <div className="flex h-3 gap-0.5" role="progressbar" aria-valuemin={0} aria-valuemax={target} aria-valuenow={Math.min(count, target)}>
+            {Array.from({ length: segments }, (_, index) => (
+              <motion.span
+                key={index}
+                layout
+                className="h-full min-w-0 flex-1 rounded-full"
+                style={index < count ? accentFill(accent) : { background: tint(accent, 18) }}
+              />
+            ))}
+          </div>
+          <div className="text-center text-[11px] font-bold leading-snug text-slate-600">
+            {count} מתוך {target} פעמים היום — {percent}% הושלם{" "}
+            <span className="whitespace-nowrap font-extrabold" style={{ color: accent }}>
+              (+{fraction.toFixed(2)} יום למעקב)
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
         <Chip active={panel === "base"} color={accent} onClick={() => togglePanel("base")}>
-          🔢 ברירת מחדל ליום: {base}
+          🔢 יעד יומי קבוע: {base}
         </Chip>
         <Chip active={panel === "target"} color={accent} onClick={() => togglePanel("target")}>
-          🎯 יעד: {progress.target} ימים
+          🎯 סה״כ ימים: {formatCredit(progress.credit)} / {progress.target}
         </Chip>
         <Chip active={panel === "frequency"} color={accent} onClick={() => togglePanel("frequency")}>
-          ⚡ תדירות: {frequency === 7 ? "כל יום" : `${frequency} בשבוע`}
+          ⚡ תדירות שבועית{frequency < 7 ? `: ${frequency}` : ""}
         </Chip>
         <Chip active={panel === "routine"} color={accent} onClick={() => togglePanel("routine")}>
           {routine.emoji} {routine.id === "general" ? "זמן: כללי" : routine.label}
         </Chip>
         <Chip active={panel === "history"} color={accent} onClick={() => togglePanel("history")}>
-          📅 היסטוריה
+          📅 היסטוריית מעקב ועריכה יחסית
         </Chip>
         <Chip active={false} color={accent} danger onClick={() => setConfirmReset(true)}>
           🔄 איפוס
@@ -1237,7 +1316,12 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
       </Drawer>
 
       <Drawer open={panel === "target"}>
-        <TargetDaysPicker item={item} color={accent} />
+        <div className="space-y-1.5">
+          <div className="rounded-xl bg-slate-50 px-2 py-1.5 text-[11px] font-bold text-slate-500">
+            כל יום נספר לפי החלק שבוצע: 2 מתוך 3 = 0.67 יום, 3 מתוך 3 = יום מלא.
+          </div>
+          <TargetDaysPicker item={item} color={accent} />
+        </div>
       </Drawer>
 
       <Drawer open={panel === "frequency"}>
@@ -1254,9 +1338,9 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
             <HistoryCalendar item={item} color={accent} multiDaily />
           </Suspense>
           <NumberField
-            label="ימים שהושלמו"
-            value={progress.done}
-            onCommit={(next) => updateBubble(item.id, { done_offset: next - loggedDays })}
+            label="ימים (יחסי) שנצברו"
+            value={Math.round(progress.credit)}
+            onCommit={(next) => updateBubble(item.id, { done_offset: next - rawMultiDailyCredit(item) })}
           />
           <NumberField
             label="רצף נוכחי"
@@ -1283,7 +1367,6 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
   );
 }
 
-/** Compact X/Y ring for collapsed counter rows. */
 export function SessionBadge({ item, color, size = 40 }: { item: Bubble; color: string; size?: number }) {
   const progress = sessionProgress(item);
   return (

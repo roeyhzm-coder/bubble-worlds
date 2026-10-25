@@ -12,7 +12,7 @@ import {
   type WorldKind,
 } from "../types";
 import { applyDailyRollover, asDailyTasks } from "./daily";
-import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
+import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS, todayKey } from "./defaults";
 import { asSuccesses } from "./successes";
 import { asDayMap, asSessionLog } from "./tracking";
 import { asActionSteps, asTriangleTypes } from "./triangles";
@@ -102,6 +102,12 @@ function asPageLabels(value: unknown): PageLabels {
     successes: rec.successes?.trim() || DEFAULT_PAGE_LABELS.successes,
     studio: rec.studio?.trim() || DEFAULT_PAGE_LABELS.studio,
   };
+}
+
+/** Tombstoned ids (deleted tasks, bubbles, wins) shared by every device. */
+export function asIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0))];
 }
 
 function asListViews(value: unknown): Record<string, boolean> {
@@ -261,6 +267,7 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
   const map = Object.fromEntries(
     (settings.data ?? []).map((row: { key: string; value: unknown }) => [row.key, row.value]),
   );
+  const deletedIds = asIdList(map.deleted_ids);
   // Without the setting row, extras stay undefined so merging keeps the local values.
   const extras = map.bubble_extras === undefined ? null : asExtras(map.bubble_extras);
   return {
@@ -272,9 +279,11 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     pageLabels: asPageLabels(map.page_labels),
     listViews: asListViews(map.list_views),
     triangleTypes: asTriangleTypes(map.triangle_types),
-    dailyTasks: applyDailyRollover(asDailyTasks(map.daily_tasks)),
+    dailyTasks: applyDailyRollover(asDailyTasks(map.daily_tasks), todayKey(), {
+      deleted: new Set(deletedIds),
+    }),
     successes: asSuccesses(map.successes),
-    deletedIds: [],
+    deletedIds,
   };
 }
 
@@ -346,6 +355,40 @@ export function syncBubbleExtras(bubbles: Bubble[], deletedIds: string[] = []): 
   return run;
 }
 
+let tombstoneChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Read-merge-write of the shared tombstone list: this device's ids are added to the cloud's,
+ * so one device can never wipe another's deletes; `restored` (undo) is the only way out.
+ * Nothing is written when the read fails.
+ */
+export function syncDeletedIds(ids: string[], restored: string[] = []): Promise<string | null> {
+  const run = tombstoneChain.then(async (): Promise<string | null> => {
+    const supabase = await getClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from(BW_TABLES.settings)
+      .select("value")
+      .eq("key", "deleted_ids")
+      .maybeSingle();
+    if (error) {
+      console.warn("deleted_ids read failed; skipping write", error.message);
+      return error.message;
+    }
+    const back = new Set(restored);
+    const remote = asIdList((data as { value?: unknown } | null)?.value);
+    const merged = [...new Set([...remote, ...ids])].filter((id) => !back.has(id));
+    if (merged.length === remote.length && merged.every((id, index) => id === remote[index])) return null;
+    const { error: writeError } = await supabase
+      .from(BW_TABLES.settings)
+      .upsert({ key: "deleted_ids", value: merged });
+    if (writeError) console.warn("deleted_ids write failed", writeError.message);
+    return writeError?.message ?? null;
+  });
+  tombstoneChain = run.catch(() => null);
+  return run;
+}
+
 export async function upsertColorRoles(colorRoles: ColorRoles): Promise<void> {
   return upsertSetting("color_roles", colorRoles);
 }
@@ -392,6 +435,8 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
   if (settingsError) result.errors.push(`הגדרות: ${settingsError.message}`);
   const extrasError = await syncBubbleExtras(snapshot.bubbles, snapshot.deletedIds);
   if (extrasError) result.errors.push(`נתוני פריטים: ${extrasError}`);
+  const tombstoneError = await syncDeletedIds(snapshot.deletedIds);
+  if (tombstoneError) result.errors.push(`מחיקות: ${tombstoneError}`);
   result.ok = result.errors.length === 0;
   return result;
 }

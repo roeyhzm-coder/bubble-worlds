@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "verify": "node --experimental-strip-types scripts/verify-daily.ts",
+    "build": "npm run verify && tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -131,7 +131,8 @@ export function mergeSnapshots(
   remote: AppSnapshot,
   prefer: MergePreference = "local",
 ): AppSnapshot {
-  const deleted = new Set(local.deletedIds ?? []);
+  // Deletes from any device stick everywhere: tombstones are the union of both sides.
+  const deleted = new Set([...(local.deletedIds ?? []), ...(remote.deletedIds ?? [])]);
   const pick = <V extends object>(l: V, r: V): V =>
     prefer === "local" ? { ...r, ...l } : { ...l, ...r };
   // mergeDailyTasks / mergeSuccesses let their second argument win on shared ids.
@@ -151,7 +152,7 @@ export function mergeSnapshots(
     pageLabels: pick(local.pageLabels, remote.pageLabels),
     listViews: pick(local.listViews, remote.listViews),
     triangleTypes: mergeById(local.triangleTypes ?? [], remote.triangleTypes ?? [], new Set(), prefer),
-    dailyTasks: mergeDailyTasks(dailyA ?? [], dailyB ?? []).filter((item) => !deleted.has(item.id)),
+    dailyTasks: mergeDailyTasks(dailyA ?? [], dailyB ?? [], deleted),
     successes: mergeSuccesses(winsA ?? [], winsB ?? []).filter((item) => !deleted.has(item.id)),
     deletedIds: [...deleted],
   });

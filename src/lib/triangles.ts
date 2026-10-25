@@ -117,12 +117,37 @@ export function upgradeTrackColor(type: TriangleType): TriangleType {
   return { ...type, ...(legacy ? { color: TRACK_COLOR } : {}), recolor_migrated: true };
 }
 
+const MULTI_DAILY_NAMES = ["מרובה", "תכלת"];
+const MULTI_DAILY_COLORS = new Set(["#06b6d4", "#0ea5e9", "#22d3ee"]);
+
+/** The cyan "מעקב מרובה ביום" family, whichever way it was saved. */
+function isMultiDailyCandidate(type: TriangleType): boolean {
+  if (type.id === TRI_TRACK) return false;
+  return (
+    type.id === TRI_MULTI_DAILY ||
+    MULTI_DAILY_NAMES.some((word) => type.name.includes(word)) ||
+    MULTI_DAILY_COLORS.has(type.color.trim().toLowerCase())
+  );
+}
+
+/**
+ * Restores the multi-daily template on a cyan triangle that an older app version saved back
+ * as "tracking". Runs on every normalize (old cached clients can downgrade it again), but a
+ * template picked by hand (counter_migrated) is final.
+ */
+export function upgradeMultiDailyTriangle(type: TriangleType): TriangleType {
+  if (type.counter_migrated || type.template !== "tracking" || !isMultiDailyCandidate(type)) return type;
+  const deepBlue = type.color.trim().toLowerCase() === TRACK_COLOR.toLowerCase();
+  return { ...type, template: "multi_daily", ...(deepBlue ? { color: MULTI_DAILY_COLOR } : {}) };
+}
+
 export function mergeTriangleTypes(existing: TriangleType[]): TriangleType[] {
   const map = new Map<string, TriangleType>();
   for (const item of DEFAULT_TRIANGLE_TYPES) map.set(item.id, item);
   for (const item of existing.map(upgradeTrackColor)) map.set(item.id, { ...map.get(item.id), ...item });
   return [...map.values()]
     .map(upgradeCounterTriangle)
+    .map(upgradeMultiDailyTriangle)
     .sort((a, b) => a.order_index - b.order_index);
 }
 

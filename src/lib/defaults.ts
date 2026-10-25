@@ -97,7 +97,7 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
     pageLabels: { ...DEFAULT_PAGE_LABELS, ...snapshot.pageLabels },
     listViews: { ...snapshot.listViews },
     triangleTypes: mergeTriangleTypes(snapshot.triangleTypes ?? []),
-    dailyTasks: applyDailyRollover(asDailyTasks(snapshot.dailyTasks)),
+    dailyTasks: applyDailyRollover(asDailyTasks(snapshot.dailyTasks), todayKey(), { deleted }),
     successes: asSuccesses(snapshot.successes).filter((item) => !deleted.has(item.id)),
     deletedIds: [...deleted],
   };

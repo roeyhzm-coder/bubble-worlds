@@ -240,6 +240,51 @@ export function dailyBasePatch(bubble: Bubble, next: number): Partial<Bubble> {
   };
 }
 
+/** Share of a date's target that was done, capped at 1 (2 of 3 → 0.67 of a day). */
+export function dayFraction(bubble: Bubble, date: string): number {
+  const target = dayTargetForDate(bubble, date);
+  return Math.min(1, dayCount(bubble, date) / target);
+}
+
+/** Every date with at least one session (full check-ins included). */
+export function activeDays(bubble: Pick<Bubble, "tracking_history" | "daily_counts">): string[] {
+  const counted = Object.entries(bubble.daily_counts ?? {})
+    .filter(([, count]) => count > 0)
+    .map(([date]) => date);
+  return uniqueSorted([...(bubble.tracking_history ?? []), ...counted]);
+}
+
+/**
+ * Multi-daily template: each day earns done/target of a day (max 1), summed into the
+ * day goal, so partial days still move the item forward. Rounded to one decimal.
+ */
+export function multiDailyProgress(bubble: Bubble): {
+  credit: number;
+  target: number;
+  ratio: number;
+  today: { count: number; target: number; fraction: number };
+} {
+  const credit = Math.max(0, Math.round((rawMultiDailyCredit(bubble) + (bubble.done_offset ?? 0)) * 10) / 10);
+  const target = Math.max(1, bubble.target_days || 1);
+  const { count, target: todayTarget } = dayProgress(bubble);
+  return {
+    credit,
+    target,
+    ratio: Math.min(1, credit / target),
+    today: { count, target: todayTarget, fraction: Math.min(1, count / todayTarget) },
+  };
+}
+
+/** Unrounded credit before done_offset, so a manual edit can store the exact difference. */
+export function rawMultiDailyCredit(bubble: Bubble): number {
+  return activeDays(bubble).reduce((sum, date) => sum + dayFraction(bubble, date), 0);
+}
+
+/** "12.6" / "3": one decimal only when it carries information. */
+export function formatCredit(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 /** Clears check-ins, per-day counts and per-day targets (the default per-day target is kept). */
 export function resetMultiDailyPatch(): Partial<Bubble> {
   return {
@@ -305,8 +350,9 @@ export function computeStreak(
   return streak;
 }
 
+/** Days with any session count toward the streak (multi-daily partial days included). */
 export function itemStreak(bubble: Bubble): number {
-  const base = computeStreak(bubble.tracking_history ?? [], bubble.streak_mode, bubble.weekly_frequency);
+  const base = computeStreak(activeDays(bubble), bubble.streak_mode, bubble.weekly_frequency);
   return Math.max(0, base + (bubble.streak_offset ?? 0));
 }
 
@@ -316,6 +362,10 @@ export function isItemCompleted(bubble: Bubble, template: ToolTemplate | undefin
   if (template === "action") return Boolean(bubble.action_done);
   if (template === "thought") return Boolean(bubble.challenge_done);
   if (bubble.challenge_done) return true;
+  if (template === "multi_daily") {
+    const multi = multiDailyProgress(bubble);
+    return multi.credit >= multi.target;
+  }
   const progress = template === "counter" ? sessionProgress(bubble) : trackingProgress(bubble);
   return progress.done >= progress.target;
 }
