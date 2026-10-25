@@ -7,6 +7,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
+import { repairDone, repairStrayListItems } from "../lib/repair";
 import { loadLocal, saveLocal } from "../lib/storage";
 import { syncBubbleExtras } from "../lib/supabase";
 import type { AppSnapshot } from "../types";
@@ -31,7 +32,11 @@ export interface Store {
 }
 
 export function useStore(): Store {
-  const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadLocal());
+  const [snapshot, setSnapshot] = useState<AppSnapshot>(() => {
+    const local = loadLocal();
+    // Rescue habits that became floating bubbles; the persist effect saves the fix locally.
+    return repairDone() ? local : repairStrayListItems(local).snapshot;
+  });
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const ignoreRemoteUntil = useRef(0);

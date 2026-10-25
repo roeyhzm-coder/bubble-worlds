@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { markRepairDone, repairDone, repairStrayListItems } from "../lib/repair";
 import { backupLocal, downloadBackup, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
   fetchRemoteSnapshot,
@@ -69,15 +70,21 @@ export function useCloudSync(store: Store): CloudSync {
       applyingRemote.current = true;
       // Device data wins: every local item and field survives, remote only fills gaps
       // (except per-item extras, where the newer edit wins).
-      const merged = mergeSnapshots(snapshotRef.current, remote, "local");
+      const combined = mergeSnapshots(snapshotRef.current, remote, "local");
+      // Runs again on the cloud-merged data: the startup push below writes the rescue to Supabase.
+      const repairing = !repairDone();
+      const merged = repairing ? repairStrayListItems(combined).snapshot : combined;
       snapshotRef.current = merged;
       setSnapshot(merged);
       saveLocal(merged);
       queueMicrotask(() => {
         applyingRemote.current = false;
       });
-      void pushToCloud();
+      void pushToCloud().then((result) => {
+        if (repairing && result.ok) markRepairDone();
+      });
     })();
+    if (!isCloudEnabled && !repairDone()) markRepairDone();
     const unsubscribe = subscribeRealtime((remote) => {
       if (applyingRemote.current || Date.now() < ignoreRemoteUntil.current) return;
       applyingRemote.current = true;

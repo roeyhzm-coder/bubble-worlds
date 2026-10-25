@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { acceptsListItems } from "../lib/repair";
 import { EMPTY_ITEM_TOOLS, PALETTE, freeSlot, layoutRing, newId, todayKey } from "../lib/defaults";
 import {
   dailyBasePatch,
@@ -121,6 +122,8 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
         position_x: slot.x,
         position_y: slot.y,
         size_multiplier: input.size_multiplier,
+        // Canvas bubbles are containers, never habits: they start without a triangle.
+        triangle_id: null,
       };
       mutate((prev) => {
         const categories = parent
@@ -204,7 +207,10 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
   );
 
   const updateBubble = useCallback(
-    (id: string, patch: Partial<Bubble>) => {
+    (id: string, raw: Partial<Bubble>) => {
+      // Re-parenting goes only through moveItems / splitIntoNewList, which check the
+      // destination, so a plain edit can never lift a list item onto a canvas.
+      const { parent_bubble_id: _parent, category_id: _category, ...patch } = raw;
       const extras = touchesExtras(patch);
       const stamped = extras ? { ...patch, extras_updated_at: Date.now() } : patch;
       mutate((prev) => {
@@ -392,7 +398,7 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
     (ids: string[], target: DrillNode) => {
       const base = snapshotRef.current;
       const container = containerFor(target, base);
-      if (!container) return 0;
+      if (!container || !acceptsListItems(target, base)) return 0;
       const result = relocate(base, ids, container);
       if (result.moved) commitRelocation(base, result, `הועברו ${result.moved} פריטים`);
       return result.moved;
