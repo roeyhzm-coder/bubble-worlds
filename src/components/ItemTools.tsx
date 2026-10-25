@@ -20,11 +20,14 @@ import {
   type ReactNode,
 } from "react";
 import { accentFill, accentRing, tint } from "../lib/accent";
-import { PALETTE } from "../lib/defaults";
+import { PALETTE, todayKey } from "../lib/defaults";
 import { useEscape } from "../lib/useEscape";
 import { ROUTINE_SLOTS, routineOf, routineSlot, supportsRoutine } from "../lib/routine";
 import {
+  MAX_DAILY,
+  baseDailyTarget,
   computeStreak,
+  dayProgress,
   hasDate,
   isItemCompleted,
   itemStreak,
@@ -34,7 +37,7 @@ import {
   trackingProgress,
   weeklyProgress,
 } from "../lib/tracking";
-import { WEEKDAYS, dueText, findTriangle, nextWeekdayIso } from "../lib/triangles";
+import { MULTI_DAILY_COLOR, WEEKDAYS, dueText, findTriangle, nextWeekdayIso } from "../lib/triangles";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, ToolTemplate, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -281,6 +284,7 @@ export function QuickCheck({
   const { updateBubble, markToday, unmarkToday } = useApp();
   const [pulse, setPulse] = useState(0);
   const sessionUndo = useSessionUndo(item);
+  const dayUndo = useDayUndo(item);
   const template = type.template;
 
   if (template === "thought") {
@@ -291,10 +295,18 @@ export function QuickCheck({
     );
   }
 
-  const doneToday = template === "tracking" && hasDate(item.tracking_history);
-  const progress = template === "counter" ? sessionProgress(item) : trackingProgress(item);
-  const label =
-    template === "tracking"
+  const multi = template === "multi_daily";
+  const today = dayProgress(item);
+  const doneToday = multi ? today.complete : template === "tracking" && hasDate(item.tracking_history);
+  const progress = multi
+    ? { done: today.count, target: today.target, ratio: Math.min(1, today.count / today.target) }
+    : template === "counter"
+      ? sessionProgress(item)
+      : trackingProgress(item);
+  const floatsPlusOne = template === "counter" || multi;
+  const label = multi
+    ? `ביצעתי עוד פעם היום (+1) · ${today.count}/${today.target}`
+    : template === "tracking"
       ? doneToday
         ? "בטל את הסימון של היום"
         : "סמן בוצע היום"
@@ -311,6 +323,8 @@ export function QuickCheck({
       else markToday(item.id);
     } else if (template === "counter") {
       sessionUndo.logDone();
+    } else if (multi) {
+      dayUndo.plusOne();
     } else {
       updateBubble(item.id, { action_done: !item.action_done });
     }
@@ -325,7 +339,7 @@ export function QuickCheck({
         whileTap={{ scale: 0.86 }}
         aria-label={label}
         title={label}
-        aria-pressed={template === "counter" ? undefined : template === "tracking" ? doneToday : item.action_done}
+        aria-pressed={floatsPlusOne ? undefined : template === "tracking" ? doneToday : item.action_done}
         className="relative grid shrink-0 place-items-center"
         style={{ width: size + 4, height: size + 4 }}
       >
@@ -356,6 +370,10 @@ export function QuickCheck({
                 >
                   <Check size={Math.round(size / 3)} strokeWidth={3} />
                 </span>
+              ) : multi ? (
+                <span className="text-[10px] font-extrabold text-slate-600" dir="ltr">
+                  {today.count}/{today.target}
+                </span>
               ) : (
                 <span className="text-[10px] font-extrabold text-slate-600">{progress.done}</span>
               )}
@@ -363,7 +381,7 @@ export function QuickCheck({
           )}
         </motion.span>
         <AnimatePresence>
-          {pulse > 0 && template === "counter" && (
+          {pulse > 0 && floatsPlusOne && (
             <motion.span
               key={pulse}
               initial={{ opacity: 1, y: 0 }}
@@ -378,7 +396,10 @@ export function QuickCheck({
           )}
         </AnimatePresence>
       </motion.button>
-      <UndoButton visible={sessionUndo.canUndo} onUndo={sessionUndo.undo} />
+      <UndoButton
+        visible={multi ? dayUndo.canUndo : sessionUndo.canUndo}
+        onUndo={multi ? dayUndo.undo : sessionUndo.undo}
+      />
     </span>
   );
 }
@@ -594,6 +615,8 @@ export function TypeTools({
         <ActionTools item={live} />
       ) : type.template === "counter" ? (
         <CounterTools item={live} color={type.color} />
+      ) : type.template === "multi_daily" ? (
+        <MultiDailyTools item={live} color={type.color} />
       ) : (
         <TrackingTools item={live} color={type.color} routineEnabled={supportsRoutine(type)} />
       )}
@@ -656,6 +679,115 @@ function NumberField({
 }
 
 
+/** Time-of-day selector shared by the habit trackers (☀️ / 🌤️ / 🌙 / 🔄). */
+function RoutinePicker({ item, color, onPicked }: { item: Bubble; color: string; onPicked: () => void }) {
+  const { updateBubble } = useApp();
+  const routine = routineOf(item);
+  return (
+    <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
+      <div className="text-[11px] font-bold text-slate-400">באיזה חלק של היום?</div>
+      <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="זמן ביום">
+        {ROUTINE_SLOTS.map((slot) => {
+          const active = routine === slot.id;
+          return (
+            <button
+              key={slot.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => {
+                updateBubble(item.id, { routine_time: slot.id });
+                onPicked();
+              }}
+              className={`flex h-12 flex-col items-center justify-center rounded-xl text-[11px] font-extrabold leading-tight ${
+                active ? "text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
+              }`}
+              style={active ? accentFill(color) : undefined}
+            >
+              <span className="text-base leading-none">{slot.emoji}</span>
+              {slot.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Goal in days: presets plus a free number. */
+function TargetDaysPicker({ item, color }: { item: Bubble; color: string }) {
+  const { updateBubble } = useApp();
+  const [customDays, setCustomDays] = useState(String(item.target_days || 30));
+
+  useEffect(() => {
+    setCustomDays(String(item.target_days || 30));
+  }, [item.target_days]);
+
+  const applyCustomDays = (raw: string) => {
+    setCustomDays(raw);
+    const next = Math.round(Number(raw));
+    if (!Number.isFinite(next) || next < 1) return;
+    updateBubble(item.id, { target_days: Math.min(3650, next) });
+  };
+
+  return (
+    <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
+      <div className="flex flex-wrap gap-1.5">
+        {DAY_PRESETS.map((n) => (
+          <PresetButton
+            key={n}
+            active={item.target_days === n}
+            color={color}
+            onClick={() => updateBubble(item.id, { target_days: n })}
+          >
+            {n}
+          </PresetButton>
+        ))}
+      </div>
+      <label className="flex h-10 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-slate-200">
+        <span className="shrink-0 text-[11px] font-extrabold text-slate-500">ימים מותאמים אישית</span>
+        <input
+          type="number"
+          min={1}
+          max={3650}
+          inputMode="numeric"
+          value={customDays}
+          onChange={(e) => applyCustomDays(e.target.value)}
+          className="h-9 min-w-0 flex-1 bg-transparent text-end text-sm font-extrabold text-slate-800 outline-none"
+          aria-label="ימים מותאמים אישית"
+        />
+      </label>
+    </div>
+  );
+}
+
+/** Days per week the habit should happen (7 = every day). */
+function FrequencyPicker({ item, color }: { item: Bubble; color: string }) {
+  const { updateBubble } = useApp();
+  const frequency = Math.min(7, Math.max(1, item.weekly_frequency || 7));
+  return (
+    <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
+      <div className="text-[11px] font-bold text-slate-400">כמה ימים בשבוע?</div>
+      <div className="flex flex-wrap gap-1.5">
+        {FREQUENCIES.map((n) => (
+          <PresetButton
+            key={n}
+            active={frequency === n}
+            color={color}
+            onClick={() => updateBubble(item.id, { weekly_frequency: n })}
+          >
+            {n === 7 ? "כל יום" : n}
+          </PresetButton>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CalendarFallback() {
+  return <div className="h-64 animate-pulse rounded-xl bg-white ring-1 ring-slate-200" aria-label="טוען לוח…" />;
+}
+
 type TrackingPanel = "target" | "frequency" | "routine" | "history" | null;
 
 function TrackingTools({
@@ -672,18 +804,7 @@ function TrackingTools({
   const [confirmReset, setConfirmReset] = useState(false);
   const [panel, setPanel] = useState<TrackingPanel>(null);
   useEscape(panel !== null, () => setPanel(null));
-  const [customDays, setCustomDays] = useState(String(item.target_days || 30));
 
-  useEffect(() => {
-    setCustomDays(String(item.target_days || 30));
-  }, [item.target_days]);
-
-  const applyCustomDays = (raw: string) => {
-    setCustomDays(raw);
-    const next = Math.round(Number(raw));
-    if (!Number.isFinite(next) || next < 1) return;
-    updateBubble(item.id, { target_days: Math.min(3650, next) });
-  };
   const togglePanel = (next: Exclude<TrackingPanel, null>) =>
     setPanel((current) => (current === next ? null : next));
 
@@ -769,86 +890,20 @@ function TrackingTools({
       </div>
 
       <Drawer open={routineEnabled && panel === "routine"}>
-        <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
-          <div className="text-[11px] font-bold text-slate-400">באיזה חלק של היום?</div>
-          <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="זמן ביום">
-            {ROUTINE_SLOTS.map((slot) => {
-              const active = routine.id === slot.id;
-              return (
-                <button
-                  key={slot.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => {
-                    updateBubble(item.id, { routine_time: slot.id });
-                    setPanel(null);
-                  }}
-                  className={`flex h-12 flex-col items-center justify-center rounded-xl text-[11px] font-extrabold leading-tight ${
-                    active ? "text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
-                  }`}
-                  style={active ? accentFill(color) : undefined}
-                >
-                  <span className="text-base leading-none">{slot.emoji}</span>
-                  {slot.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <RoutinePicker item={item} color={color} onPicked={() => setPanel(null)} />
       </Drawer>
 
       <Drawer open={panel === "target"}>
-        <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
-          <div className="flex flex-wrap gap-1.5">
-            {DAY_PRESETS.map((n) => (
-              <PresetButton
-                key={n}
-                active={item.target_days === n}
-                color={color}
-                onClick={() => updateBubble(item.id, { target_days: n })}
-              >
-                {n}
-              </PresetButton>
-            ))}
-          </div>
-          <label className="flex h-10 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-slate-200">
-            <span className="shrink-0 text-[11px] font-extrabold text-slate-500">ימים מותאמים אישית</span>
-            <input
-              type="number"
-              min={1}
-              max={3650}
-              inputMode="numeric"
-              value={customDays}
-              onChange={(e) => applyCustomDays(e.target.value)}
-              className="h-9 min-w-0 flex-1 bg-transparent text-end text-sm font-extrabold text-slate-800 outline-none"
-              aria-label="ימים מותאמים אישית"
-            />
-          </label>
-        </div>
+        <TargetDaysPicker item={item} color={color} />
       </Drawer>
 
       <Drawer open={panel === "frequency"}>
-        <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
-          <div className="text-[11px] font-bold text-slate-400">כמה פעמים בשבוע?</div>
-          <div className="flex flex-wrap gap-1.5">
-            {FREQUENCIES.map((n) => (
-              <PresetButton
-                key={n}
-                active={frequency === n}
-                color={color}
-                onClick={() => updateBubble(item.id, { weekly_frequency: n })}
-              >
-                {n === 7 ? "כל יום" : n}
-              </PresetButton>
-            ))}
-          </div>
-        </div>
+        <FrequencyPicker item={item} color={color} />
       </Drawer>
 
       <Drawer open={panel === "history"}>
         <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
-          <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-white ring-1 ring-slate-200" aria-label="טוען לוח…" />}>
+          <Suspense fallback={<CalendarFallback />}>
             <HistoryCalendar item={item} color={color} />
           </Suspense>
           <NumberField
@@ -877,6 +932,340 @@ function TrackingTools({
           setConfirmReset(false);
         }}
       />
+    </div>
+  );
+}
+
+type DaySnapshot = Pick<Bubble, "daily_counts" | "daily_targets_by_date" | "tracking_history">;
+
+/**
+ * Logs "+1 today" for a multi-daily item and keeps a short-lived stack of the prior per-day
+ * fields, so an accidental tap can be reverted exactly (count, day target and check-in).
+ */
+function useDayUndo(item: Bubble): { canUndo: boolean; plusOne: () => void; undo: () => void } {
+  const { snapshot, updateBubble, applyDayAction } = useApp();
+  const [stack, setStack] = useState<DaySnapshot[]>([]);
+  const timer = useRef<number | null>(null);
+  const live = snapshot.bubbles.find((row) => row.id === item.id) ?? item;
+
+  useEffect(
+    () => () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const arm = () => {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setStack([]), UNDO_WINDOW_MS);
+  };
+
+  const plusOne = () => {
+    setStack((current) => [
+      ...current,
+      {
+        daily_counts: live.daily_counts ?? {},
+        daily_targets_by_date: live.daily_targets_by_date ?? {},
+        tracking_history: live.tracking_history ?? [],
+      },
+    ]);
+    arm();
+    applyDayAction(item.id, todayKey(), "plus");
+  };
+
+  const undo = () => {
+    const previous = stack[stack.length - 1];
+    if (!previous) return;
+    updateBubble(item.id, previous);
+    const rest = stack.slice(0, -1);
+    setStack(rest);
+    if (rest.length) arm();
+    else if (timer.current) window.clearTimeout(timer.current);
+  };
+
+  return { canUndo: stack.length > 0, plusOne, undo };
+}
+
+/** Collapsed-row summary for multi-daily items: today's sessions and completed days. */
+export function MultiDailyBadge({ item, color }: { item: Bubble; color: string }) {
+  const today = dayProgress(item);
+  const days = trackingProgress(item);
+  return (
+    <span className="inline-flex min-w-0 shrink-0 items-center gap-1 text-[11px] font-extrabold">
+      <span
+        className={`rounded-full px-1.5 py-0.5 ${today.complete ? "text-white" : "text-slate-700"}`}
+        style={today.complete ? accentFill(color) : { background: tint(color, 16) }}
+      >
+        {today.count}/{today.target} היום
+      </span>
+      <span className="text-slate-400">
+        {days.done}/{days.target} ימים
+      </span>
+    </span>
+  );
+}
+
+/** Compact "[-] value [+]" control with large tap targets. */
+function Stepper({
+  label,
+  value,
+  min,
+  max,
+  color,
+  onStep,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  color: string;
+  onStep: (direction: -1 | 1) => void;
+}) {
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-white px-1 ring-1 ring-slate-200">
+      <span className="ps-1.5 text-[11px] font-extrabold text-slate-500">{label}</span>
+      <button
+        type="button"
+        onClick={() => onStep(-1)}
+        disabled={value <= min}
+        className="grid h-7 w-7 place-items-center rounded-lg bg-slate-50 text-sm font-black text-slate-600 disabled:opacity-30"
+        aria-label={`הפחתת ${label}`}
+      >
+        −
+      </button>
+      <motion.span
+        key={value}
+        initial={{ scale: 0.7, opacity: 0.4 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 520, damping: 16 }}
+        className="w-5 text-center text-sm font-black"
+        style={{ color }}
+        aria-live="polite"
+      >
+        {value}
+      </motion.span>
+      <button
+        type="button"
+        onClick={() => onStep(1)}
+        disabled={value >= max}
+        className="grid h-7 w-7 place-items-center rounded-lg bg-slate-50 text-sm font-black text-slate-600 disabled:opacity-30"
+        aria-label={`הגדלת ${label}`}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+const DAILY_PRESETS = [1, 2, 3, 4, 5, 6];
+
+type MultiDailyPanel = "base" | "target" | "frequency" | "routine" | "history" | null;
+
+/** Cyan multi-per-day habit: N sessions make a day; completed days feed the shared streak engine. */
+function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
+  const { updateBubble, applyDayAction, setDailyBase, resetMultiDaily } = useApp();
+  const [panel, setPanel] = useState<MultiDailyPanel>(null);
+  useEscape(panel !== null, () => setPanel(null));
+  const dayUndo = useDayUndo(item);
+  const accent = color || MULTI_DAILY_COLOR;
+  const date = todayKey();
+
+  const togglePanel = (next: Exclude<MultiDailyPanel, null>) =>
+    setPanel((current) => (current === next ? null : next));
+
+  const today = dayProgress(item, date);
+  const base = baseDailyTarget(item);
+  const progress = trackingProgress(item);
+  const frequency = Math.min(7, Math.max(1, item.weekly_frequency || 7));
+  const week = weeklyProgress(item);
+  const streak = itemStreak(item);
+  const baseStreak = useMemo(
+    () => computeStreak(item.tracking_history, item.streak_mode, item.weekly_frequency),
+    [item.tracking_history, item.streak_mode, item.weekly_frequency],
+  );
+  const loggedDays = new Set(item.tracking_history ?? []).size;
+  const routine = routineSlot(routineOf(item));
+  const slots = Math.max(today.target, today.count);
+
+  return (
+    <div className="space-y-2 border-t px-3 py-2.5" style={{ borderColor: tint(accent, 20) }}>
+      <div className="flex items-center gap-2.5">
+        <div className="relative grid h-11 w-11 shrink-0 place-items-center">
+          <ProgressRing ratio={progress.ratio} size={44} color={accent} className="absolute inset-0" />
+          <span className="text-[10px] font-extrabold text-slate-700">{progress.done}</span>
+        </div>
+        <div className="min-w-0 flex-1 text-[12px] font-bold leading-tight text-slate-500">
+          <div className="text-slate-800">
+            {progress.done}/{progress.target} ימים
+          </div>
+          <div>🔥 רצף {streak}</div>
+        </div>
+        {frequency < 7 && (
+          <span
+            className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-extrabold ${
+              week.done >= week.target ? "bg-emerald-100 text-emerald-700" : "bg-cyan-50 text-cyan-700"
+            }`}
+          >
+            השבוע: {week.done}/{week.target}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-2 rounded-xl p-2" style={{ background: tint(accent, 8) }}>
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex h-7 items-center gap-1.5">
+            <span className="text-[12px] font-extrabold text-slate-700">היום</span>
+            {today.complete && (
+              <span
+                className="rounded-full px-1.5 py-0.5 text-[10px] font-extrabold text-white"
+                style={accentFill(accent)}
+              >
+                הושלם ✓
+              </span>
+            )}
+            <UndoButton visible={dayUndo.canUndo} onUndo={dayUndo.undo} />
+          </div>
+          <Stepper
+            label="יעד להיום:"
+            value={today.target}
+            min={1}
+            max={MAX_DAILY}
+            color={accent}
+            onStep={(direction) => applyDayAction(item.id, date, direction > 0 ? "target_plus" : "target_minus")}
+          />
+        </div>
+        <div className="flex flex-wrap gap-1.5" aria-label={`בוצע ${today.count} מתוך ${today.target} היום`}>
+          {Array.from({ length: slots }, (_, index) => {
+            const filled = index < today.count;
+            return (
+              <motion.button
+                key={index}
+                type="button"
+                layout
+                whileTap={{ scale: 0.9 }}
+                disabled={filled}
+                onClick={dayUndo.plusOne}
+                className={`inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-extrabold ${
+                  filled ? "text-white" : "border border-dashed bg-white text-slate-500"
+                }`}
+                style={filled ? accentFill(accent) : { borderColor: tint(accent, 60) }}
+                aria-label={filled ? `פעם ${index + 1} בוצעה` : `סימון פעם ${index + 1}`}
+              >
+                {filled ? "✓" : "○"} פעם {index + 1}
+              </motion.button>
+            );
+          })}
+          <motion.button
+            type="button"
+            layout
+            whileTap={{ scale: 0.9 }}
+            onClick={dayUndo.plusOne}
+            disabled={today.count >= MAX_DAILY}
+            className="inline-flex h-8 items-center gap-0.5 rounded-full bg-white px-2.5 text-[11px] font-extrabold ring-1 disabled:opacity-40"
+            style={{ color: accent, ["--tw-ring-color" as string]: tint(accent, 50) }}
+          >
+            <Plus size={12} strokeWidth={3} />
+            הוסף פעם להיום
+          </motion.button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[7fr_3fr] gap-1.5">
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.97 }}
+          onClick={dayUndo.plusOne}
+          disabled={today.count >= MAX_DAILY}
+          className="flex h-11 items-center justify-center gap-1 rounded-xl px-1 text-[13px] font-extrabold text-white disabled:opacity-60"
+          style={accentFill(accent)}
+        >
+          ✓ ביצעתי (+1) · ({today.count}/{today.target} היום)
+        </motion.button>
+        <button
+          type="button"
+          onClick={() => applyDayAction(item.id, date, "minus")}
+          disabled={today.count === 0}
+          className="h-11 rounded-xl bg-white text-[12px] font-extrabold text-slate-600 ring-1 ring-slate-200 disabled:opacity-40"
+        >
+          -1 החסר מהיום
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        <Chip active={panel === "base"} color={accent} onClick={() => togglePanel("base")}>
+          🔢 ברירת מחדל ליום: {base}
+        </Chip>
+        <Chip active={panel === "target"} color={accent} onClick={() => togglePanel("target")}>
+          🎯 יעד: {progress.target} ימים
+        </Chip>
+        <Chip active={panel === "frequency"} color={accent} onClick={() => togglePanel("frequency")}>
+          ⚡ תדירות: {frequency === 7 ? "כל יום" : `${frequency} בשבוע`}
+        </Chip>
+        <Chip active={panel === "routine"} color={accent} onClick={() => togglePanel("routine")}>
+          {routine.emoji} {routine.id === "general" ? "זמן: כללי" : routine.label}
+        </Chip>
+        <Chip active={panel === "history"} color={accent} onClick={() => togglePanel("history")}>
+          📅 היסטוריה
+        </Chip>
+        <Chip active={false} color={accent} danger onClick={() => resetMultiDaily(item.id)}>
+          🔄 איפוס
+        </Chip>
+      </div>
+
+      <Drawer open={panel === "base"}>
+        <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
+          <div className="text-[11px] font-bold text-slate-400">
+            כמה פעמים ביום כברירת מחדל? (ימים קודמים שומרים את היעד שלהם)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {DAILY_PRESETS.map((n) => (
+              <PresetButton key={n} active={base === n} color={accent} onClick={() => setDailyBase(item.id, n)}>
+                {n}×
+              </PresetButton>
+            ))}
+          </div>
+          <Stepper
+            label="מותאם אישית:"
+            value={base}
+            min={1}
+            max={MAX_DAILY}
+            color={accent}
+            onStep={(direction) => setDailyBase(item.id, base + direction)}
+          />
+        </div>
+      </Drawer>
+
+      <Drawer open={panel === "target"}>
+        <TargetDaysPicker item={item} color={accent} />
+      </Drawer>
+
+      <Drawer open={panel === "frequency"}>
+        <FrequencyPicker item={item} color={accent} />
+      </Drawer>
+
+      <Drawer open={panel === "routine"}>
+        <RoutinePicker item={item} color={accent} onPicked={() => setPanel(null)} />
+      </Drawer>
+
+      <Drawer open={panel === "history"}>
+        <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
+          <Suspense fallback={<CalendarFallback />}>
+            <HistoryCalendar item={item} color={accent} multiDaily />
+          </Suspense>
+          <NumberField
+            label="ימים שהושלמו"
+            value={progress.done}
+            onCommit={(next) => updateBubble(item.id, { done_offset: next - loggedDays })}
+          />
+          <NumberField
+            label="רצף נוכחי"
+            value={streak}
+            onCommit={(next) => updateBubble(item.id, { streak_offset: next - baseStreak })}
+          />
+        </div>
+      </Drawer>
+
+      <CompleteToggle item={item} label="סיימתי את האתגר ✓" />
     </div>
   );
 }
@@ -1213,6 +1602,7 @@ export function templateLabel(template: ToolTemplate): string {
   if (template === "action") return "תבנית משימה";
   if (template === "thought") return "תבנית מחשבה";
   if (template === "counter") return "מונה פעמים / הזדמנויות";
+  if (template === "multi_daily") return "מעקב מרובה ביום";
   return "תבנית מעקב";
 }
 

@@ -15,6 +15,7 @@ import {
   CompletionBar,
   DoneEditingButton,
   Drawer,
+  MultiDailyBadge,
   NoteIndicator,
   QuickCheck,
   TitleField,
@@ -296,7 +297,7 @@ export function FocusHub() {
                     <div className="space-y-2">
                       {routineGroups.length === 0 && (
                         <div className="rounded-xl bg-slate-50 px-3 py-4 text-center text-[12px] font-bold text-slate-400">
-                          אין הרגלים ל{activeSlot ? routineSlot(activeSlot).heading : "זמן הזה"} עדיין
+                          אין פריטים ל{activeSlot ? routineSlot(activeSlot).heading : "זמן הזה"} עדיין
                         </div>
                       )}
                       {routineGroups.map(({ slot, items: slotItems }) => {
@@ -417,6 +418,11 @@ function HubCard({
           {type.template === "tracking" && (
             <div className="truncate text-[11px] font-bold text-slate-400">
               {progress.done}/{progress.target} ימים
+            </div>
+          )}
+          {type.template === "multi_daily" && (
+            <div className="mt-0.5 flex min-w-0">
+              <MultiDailyBadge item={item} color={type.color} />
             </div>
           )}
           {type.template === "action" && dueText(item) && (

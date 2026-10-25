@@ -1,6 +1,15 @@
 import { useCallback, useMemo } from "react";
 import { EMPTY_ITEM_TOOLS, PALETTE, freeSlot, layoutRing, newId, todayKey } from "../lib/defaults";
-import { markDone, removeDate, removeLastDay, toggleDate } from "../lib/tracking";
+import {
+  dailyBasePatch,
+  dayActionPatch,
+  markDone,
+  removeDate,
+  removeLastDay,
+  resetMultiDailyPatch,
+  toggleDate,
+  type DayAction,
+} from "../lib/tracking";
 import {
   deleteBubbleRemote,
   deleteCategoryRemote,
@@ -60,6 +69,12 @@ export interface BubblesState {
   minusDay: (id: string) => void;
   resetTracking: (id: string) => void;
   toggleTrackingDate: (id: string, date: string) => void;
+  /** Multi-daily: +1 / -1 / target step / cycle on one date (never a future one). */
+  applyDayAction: (id: string, date: string, action: DayAction) => void;
+  /** Multi-daily: sets the default per-day target for today and new days. */
+  setDailyBase: (id: string, next: number) => void;
+  /** Multi-daily: clears history, counts and per-day targets, revertible from the undo toast. */
+  resetMultiDaily: (id: string) => void;
 }
 
 export function useBubblesState(store: Store, nav: NavigationState, undo: UndoStack): BubblesState {
@@ -532,6 +547,42 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
     [snapshotRef, updateBubble],
   );
 
+  const applyDayAction = useCallback(
+    (id: string, date: string, action: DayAction) => {
+      const bubble = snapshotRef.current.bubbles.find((b) => b.id === id);
+      if (!bubble || date > todayKey()) return;
+      updateBubble(id, dayActionPatch(bubble, date, action));
+    },
+    [snapshotRef, updateBubble],
+  );
+
+  const setDailyBase = useCallback(
+    (id: string, next: number) => {
+      const bubble = snapshotRef.current.bubbles.find((b) => b.id === id);
+      if (!bubble) return;
+      updateBubble(id, dailyBasePatch(bubble, next));
+    },
+    [snapshotRef, updateBubble],
+  );
+
+  const resetMultiDaily = useCallback(
+    (id: string) => {
+      const current = snapshotRef.current;
+      const bubble = current.bubbles.find((b) => b.id === id);
+      if (!bubble) return;
+      const reset: Bubble = { ...bubble, ...resetMultiDailyPatch(), extras_updated_at: Date.now() };
+      const next: AppSnapshot = {
+        ...current,
+        bubbles: current.bubbles.map((b) => (b.id === id ? reset : b)),
+      };
+      commit(next);
+      recordUndo(`המעקב של "${bubble.title || "פריט"}" אופס`, current, next);
+      void upsertBubble(reset);
+      scheduleExtrasSync();
+    },
+    [commit, recordUndo, scheduleExtrasSync, snapshotRef],
+  );
+
   return useMemo(
     () => ({
       commitCreate,
@@ -550,8 +601,14 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
       minusDay,
       resetTracking,
       toggleTrackingDate,
+      applyDayAction,
+      setDailyBase,
+      resetMultiDaily,
     }),
     [
+      applyDayAction,
+      resetMultiDaily,
+      setDailyBase,
       addListItem,
       commitCreate,
       deleteBubble,

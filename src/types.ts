@@ -16,7 +16,7 @@ export type StreakMode = "strict" | "flexible" | "cumulative";
 
 export type WorldKind = "bubbles" | "list";
 
-export type ToolTemplate = "tracking" | "action" | "thought" | "counter";
+export type ToolTemplate = "tracking" | "action" | "thought" | "counter" | "multi_daily";
 
 export interface TriangleType {
   id: string;
@@ -26,6 +26,8 @@ export interface TriangleType {
   order_index: number;
   /** Set once the legacy "tracking" → "counter" auto-upgrade ran, so a later manual choice sticks. */
   counter_migrated?: boolean;
+  /** Set once the legacy sky-blue habit tracker was recolored royal blue (or a color was picked by hand). */
+  recolor_migrated?: boolean;
 }
 
 export type SessionOutcome = "done" | "missed";
@@ -92,6 +94,12 @@ export interface Bubble {
   session_log?: SessionOutcome[];
   /** Tracking template: time-of-day routine slot (absent = "general"). */
   routine_time?: RoutineTime;
+  /** Multi-daily template: default times per day for days without an override (absent/0 = 2). */
+  daily_target?: number;
+  /** Multi-daily template: YYYY-MM-DD → times done that day. */
+  daily_counts?: Record<string, number>;
+  /** Multi-daily template: YYYY-MM-DD → that day's own target, overriding daily_target. */
+  daily_targets_by_date?: Record<string, number>;
   /** Manual position among siblings (absent = after ordered items, in creation order). */
   order_index?: number;
   /**
@@ -113,6 +121,9 @@ export const BUBBLE_EXTRA_KEYS = [
   "session_missed",
   "session_log",
   "routine_time",
+  "daily_target",
+  "daily_counts",
+  "daily_targets_by_date",
   "order_index",
 ] as const;
 

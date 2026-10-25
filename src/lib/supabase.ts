@@ -14,7 +14,7 @@ import {
 import { applyDailyRollover, asDailyTasks } from "./daily";
 import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS } from "./defaults";
 import { asSuccesses } from "./successes";
-import { asSessionLog } from "./tracking";
+import { asDayMap, asSessionLog } from "./tracking";
 import { asActionSteps, asTriangleTypes } from "./triangles";
 
 function stripQuotes(value: string | undefined): string {
@@ -145,6 +145,11 @@ export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExt
     if (bubble.session_missed) extras.session_missed = bubble.session_missed;
     if (bubble.session_log?.length) extras.session_log = bubble.session_log;
     if (bubble.routine_time && bubble.routine_time !== "general") extras.routine_time = bubble.routine_time;
+    if (bubble.daily_target) extras.daily_target = bubble.daily_target;
+    if (bubble.daily_counts && Object.keys(bubble.daily_counts).length) extras.daily_counts = bubble.daily_counts;
+    if (bubble.daily_targets_by_date && Object.keys(bubble.daily_targets_by_date).length) {
+      extras.daily_targets_by_date = bubble.daily_targets_by_date;
+    }
     if (typeof bubble.order_index === "number") extras.order_index = bubble.order_index;
     if (bubble.extras_updated_at) extras.updated_at = bubble.extras_updated_at;
     if (Object.keys(extras).length) out[bubble.id] = extras;
@@ -163,6 +168,9 @@ const EXTRA_DEFAULTS: BubbleExtrasEntry = {
   session_missed: 0,
   session_log: [],
   routine_time: "general",
+  daily_target: 0,
+  daily_counts: {},
+  daily_targets_by_date: {},
   order_index: undefined,
 };
 
@@ -187,6 +195,12 @@ function asExtras(value: unknown): Record<string, BubbleExtrasEntry> {
       session_missed: typeof rec.session_missed === "number" ? rec.session_missed : 0,
       session_log: asSessionLog(rec.session_log),
       routine_time: asRoutineTime(rec.routine_time),
+      daily_target:
+        typeof rec.daily_target === "number" && Number.isFinite(rec.daily_target) && rec.daily_target > 0
+          ? Math.min(50, Math.round(rec.daily_target))
+          : 0,
+      daily_counts: asDayMap(rec.daily_counts),
+      daily_targets_by_date: asDayMap(rec.daily_targets_by_date),
       order_index: typeof rec.order_index === "number" ? rec.order_index : undefined,
       updated_at: typeof rec.updated_at === "number" ? rec.updated_at : undefined,
     };

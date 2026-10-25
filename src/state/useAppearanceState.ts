@@ -84,9 +84,16 @@ export function useAppearanceState(
   const updateTriangleType = useCallback(
     (id: string, patch: Partial<TriangleType>) => {
       mutate((prev) => {
-        // A manual template pick is final: the legacy counter auto-upgrade must not undo it.
+        // Manual template / color picks are final: the legacy auto-upgrades must not undo them.
         const triangleTypes = prev.triangleTypes.map((item) =>
-          item.id === id ? { ...item, ...patch, ...(patch.template ? { counter_migrated: true } : {}) } : item,
+          item.id === id
+            ? {
+                ...item,
+                ...patch,
+                ...(patch.template ? { counter_migrated: true } : {}),
+                ...(patch.color ? { recolor_migrated: true } : {}),
+              }
+            : item,
         );
         const nextType = triangleTypes.find((item) => item.id === id);
         const bubbles = nextType

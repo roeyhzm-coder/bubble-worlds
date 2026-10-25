@@ -2,11 +2,11 @@ import type { Bubble, RoutineTime, TriangleType } from "../types";
 import { TRI_TRACK } from "./triangles";
 
 /**
- * Time-of-day routines belong only to the blue habit tracker. Other tracking-template types
- * (e.g. a red "להפסיק") list their items flat, without morning/noon/evening grouping.
+ * Time-of-day routines belong to the blue habit tracker and the multi-daily template. Other
+ * tracking-template types (e.g. a red "להפסיק") list their items flat, without grouping.
  */
-export function supportsRoutine(type: Pick<TriangleType, "id" | "name">): boolean {
-  return type.id === TRI_TRACK || type.name.trim() === "מעקב הרגלים";
+export function supportsRoutine(type: Pick<TriangleType, "id" | "name" | "template">): boolean {
+  return type.template === "multi_daily" || type.id === TRI_TRACK || type.name.trim() === "מעקב הרגלים";
 }
 
 export interface RoutineSlot {

@@ -13,6 +13,7 @@ import { ReorderButtons } from "./ReorderButtons";
 import {
   CompletionBar,
   DoneEditingButton,
+  MultiDailyBadge,
   NoteIndicator,
   NotesField,
   QuickCheck,
@@ -342,6 +343,7 @@ export function InnerList({ items }: { items: Bubble[] }) {
                   </span>
                   <NoteIndicator notes={item.notes} />
                   <span className="flex-1" />
+                  {type?.template === "multi_daily" && <MultiDailyBadge item={item} color={type.color} />}
                   {type?.template === "counter" && (
                     <span className="shrink-0 text-[11px] font-extrabold text-violet-700">
                       {sessionProgress(item).done} / {sessionProgress(item).target}

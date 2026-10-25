@@ -8,12 +8,18 @@ export const TRI_TRACK = "tri-track";
 export const TRI_ACTION = "tri-action";
 export const TRI_THOUGHT = "tri-thought";
 export const TRI_COUNTER = "tri-counter";
+export const TRI_MULTI_DAILY = "tri-multi-daily";
+
+export const TRACK_COLOR = "#2563EB";
+export const MULTI_DAILY_COLOR = "#06B6D4";
+/** The habit tracker's original sky blue, now reserved for the multi-daily family. */
+const LEGACY_TRACK_COLOR = "#38bdf8";
 
 export const DEFAULT_TRIANGLE_TYPES: TriangleType[] = [
   {
     id: TRI_TRACK,
     name: "מעקב הרגלים",
-    color: "#38bdf8",
+    color: TRACK_COLOR,
     template: "tracking",
     order_index: 0,
   },
@@ -38,6 +44,13 @@ export const DEFAULT_TRIANGLE_TYPES: TriangleType[] = [
     template: "counter",
     order_index: 3,
   },
+  {
+    id: TRI_MULTI_DAILY,
+    name: "מעקב מרובה ביום",
+    color: MULTI_DAILY_COLOR,
+    template: "multi_daily",
+    order_index: 4,
+  },
 ];
 
 export const WEEKDAYS = [
@@ -51,7 +64,11 @@ export const WEEKDAYS = [
 ] as const;
 
 export function asTemplate(value: unknown): ToolTemplate {
-  return value === "action" || value === "thought" || value === "tracking" || value === "counter"
+  return value === "action" ||
+    value === "thought" ||
+    value === "tracking" ||
+    value === "counter" ||
+    value === "multi_daily"
     ? value
     : "tracking";
 }
@@ -67,6 +84,7 @@ export function asTriangleTypes(value: unknown): TriangleType[] {
       template: asTemplate(row.template),
       order_index: typeof row.order_index === "number" ? row.order_index : index,
       ...(row.counter_migrated === true ? { counter_migrated: true } : {}),
+      ...(row.recolor_migrated === true ? { recolor_migrated: true } : {}),
     }));
   return mergeTriangleTypes(parsed);
 }
@@ -89,10 +107,20 @@ export function upgradeCounterTriangle(type: TriangleType): TriangleType {
   return { ...type, template: "counter", counter_migrated: true };
 }
 
+/**
+ * One-time fix: the saved habit tracker still on its original sky blue becomes royal blue so it
+ * reads apart from the cyan multi-daily type. Any other color was chosen by hand and is kept.
+ */
+export function upgradeTrackColor(type: TriangleType): TriangleType {
+  if (type.id !== TRI_TRACK || type.recolor_migrated) return type;
+  const legacy = type.color.trim().toLowerCase() === LEGACY_TRACK_COLOR;
+  return { ...type, ...(legacy ? { color: TRACK_COLOR } : {}), recolor_migrated: true };
+}
+
 export function mergeTriangleTypes(existing: TriangleType[]): TriangleType[] {
   const map = new Map<string, TriangleType>();
   for (const item of DEFAULT_TRIANGLE_TYPES) map.set(item.id, item);
-  for (const item of existing) map.set(item.id, { ...map.get(item.id), ...item });
+  for (const item of existing.map(upgradeTrackColor)) map.set(item.id, { ...map.get(item.id), ...item });
   return [...map.values()]
     .map(upgradeCounterTriangle)
     .sort((a, b) => a.order_index - b.order_index);
@@ -138,7 +166,7 @@ export function clearTrianglePatch(defaultColor: string): Partial<Bubble> {
 
 export function trianglePatch(type: TriangleType): Partial<Bubble> {
   const status: BubbleStatus =
-    type.template === "tracking" || type.template === "counter"
+    type.template === "tracking" || type.template === "counter" || type.template === "multi_daily"
       ? "active_tracking"
       : type.template === "action"
         ? "focus"
@@ -146,7 +174,7 @@ export function trianglePatch(type: TriangleType): Partial<Bubble> {
   return {
     triangle_id: type.id,
     color: type.color,
-    is_tracking: type.template === "tracking",
+    is_tracking: type.template === "tracking" || type.template === "multi_daily",
     status,
   };
 }

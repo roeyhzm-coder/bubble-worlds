@@ -6,7 +6,7 @@ import type { ToolTemplate } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { templateLabel } from "./ItemTools";
 
-const TEMPLATES: ToolTemplate[] = ["tracking", "action", "thought", "counter"];
+const TEMPLATES: ToolTemplate[] = ["tracking", "multi_daily", "action", "thought", "counter"];
 
 export function TriangleStudio() {
   const {

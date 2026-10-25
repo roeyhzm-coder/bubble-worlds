@@ -107,6 +107,150 @@ export function logSessionOutcome(bubble: Bubble, outcome: SessionOutcome): Part
   };
 }
 
+export const DEFAULT_DAILY_TARGET = 2;
+export const MAX_DAILY = 50;
+
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+function clampDaily(value: number, min: number): number {
+  return Math.min(MAX_DAILY, Math.max(min, Math.round(value || 0)));
+}
+
+/** Sanitizes a YYYY-MM-DD → positive number map (zero / invalid entries are dropped). */
+export function asDayMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!DAY_KEY.test(key) || typeof raw !== "number" || !Number.isFinite(raw) || raw < 1) continue;
+    out[key] = clampDaily(raw, 1);
+  }
+  return out;
+}
+
+/** Multi-daily template: default times per day for days without their own target. */
+export function baseDailyTarget(bubble: Pick<Bubble, "daily_target">): number {
+  return clampDaily(bubble.daily_target || DEFAULT_DAILY_TARGET, 1);
+}
+
+/** That date's override, else the item's default, else 2. */
+export function dayTargetForDate(
+  bubble: Pick<Bubble, "daily_target" | "daily_targets_by_date">,
+  date: string,
+): number {
+  const override = bubble.daily_targets_by_date?.[date];
+  return override && override > 0 ? clampDaily(override, 1) : baseDailyTarget(bubble);
+}
+
+/**
+ * Times done on a date. A day checked in before the item had per-day counts (e.g. switched
+ * over from the habit tracker) counts as fully done, so converting never loses progress.
+ */
+export function dayCount(
+  bubble: Pick<Bubble, "daily_counts" | "daily_target" | "daily_targets_by_date" | "tracking_history">,
+  date: string,
+): number {
+  const stored = bubble.daily_counts?.[date];
+  if (typeof stored === "number") return clampDaily(stored, 0);
+  return (bubble.tracking_history ?? []).includes(date) ? dayTargetForDate(bubble, date) : 0;
+}
+
+export function isDateComplete(bubble: Bubble, date: string): boolean {
+  const target = dayTargetForDate(bubble, date);
+  return target > 0 && dayCount(bubble, date) >= target;
+}
+
+export function dayProgress(bubble: Bubble, date = todayKey()): { count: number; target: number; complete: boolean } {
+  const count = dayCount(bubble, date);
+  const target = dayTargetForDate(bubble, date);
+  return { count, target, complete: count >= target };
+}
+
+/**
+ * Patch that sets one date's count and target, then mirrors completion into tracking_history
+ * so target days, weekly frequency, streaks and the trophy keep using the shared engine.
+ */
+export function setDayProgress(bubble: Bubble, date: string, count: number, target: number): Partial<Bubble> {
+  const nextCount = clampDaily(count, 0);
+  const nextTarget = clampDaily(target, 1);
+  const daily_counts = { ...(bubble.daily_counts ?? {}) };
+  if (nextCount > 0) daily_counts[date] = nextCount;
+  else delete daily_counts[date];
+  const daily_targets_by_date = { ...(bubble.daily_targets_by_date ?? {}) };
+  if (nextTarget === baseDailyTarget(bubble)) delete daily_targets_by_date[date];
+  else daily_targets_by_date[date] = nextTarget;
+  const history = bubble.tracking_history ?? [];
+  return {
+    daily_counts,
+    daily_targets_by_date,
+    tracking_history: nextCount >= nextTarget ? markDone(history, date) : removeDate(history, date),
+  };
+}
+
+export type DayAction = "plus" | "minus" | "target_plus" | "target_minus" | "cycle";
+
+/**
+ * "plus" past the day's target raises the target with it, so a 3rd session on a 2x day
+ * stays a completed 3/3 in one tap. "cycle" steps 0 → target, then back to 0.
+ */
+export function dayActionPatch(bubble: Bubble, date: string, action: DayAction): Partial<Bubble> {
+  const { count, target } = dayProgress(bubble, date);
+  switch (action) {
+    case "plus":
+      return setDayProgress(bubble, date, count + 1, count >= target ? count + 1 : target);
+    case "minus":
+      return setDayProgress(bubble, date, count - 1, target);
+    case "target_plus":
+      return setDayProgress(bubble, date, count, target + 1);
+    case "target_minus":
+      return setDayProgress(bubble, date, count, target - 1);
+    case "cycle":
+      return setDayProgress(bubble, date, count >= target ? 0 : count + 1, target);
+  }
+}
+
+/**
+ * Changes the default per-day target. Past days keep the target they were logged against
+ * (frozen as overrides) so history never flips; today and future days follow the new value.
+ */
+export function dailyBasePatch(bubble: Bubble, next: number): Partial<Bubble> {
+  const base = clampDaily(next, 1);
+  const previous = baseDailyTarget(bubble);
+  const today = todayKey();
+  const daily_targets_by_date = { ...(bubble.daily_targets_by_date ?? {}) };
+  if (base !== previous) {
+    for (const date of Object.keys(bubble.daily_counts ?? {})) {
+      if (date < today && !daily_targets_by_date[date]) daily_targets_by_date[date] = previous;
+    }
+  }
+  if (daily_targets_by_date[today] === base) delete daily_targets_by_date[today];
+  const updated: Bubble = { ...bubble, daily_target: base, daily_targets_by_date };
+  const history = bubble.tracking_history ?? [];
+  const todayStored = typeof bubble.daily_counts?.[today] === "number";
+  return {
+    daily_target: base,
+    daily_targets_by_date,
+    // Only re-evaluate today when it has a real count; a legacy check-in stays a check-in.
+    ...(todayStored
+      ? {
+          tracking_history: isDateComplete(updated, today)
+            ? markDone(history, today)
+            : removeDate(history, today),
+        }
+      : {}),
+  };
+}
+
+/** Clears check-ins, per-day counts and per-day targets (the default per-day target is kept). */
+export function resetMultiDailyPatch(): Partial<Bubble> {
+  return {
+    tracking_history: [],
+    done_offset: 0,
+    streak_offset: 0,
+    daily_counts: {},
+    daily_targets_by_date: {},
+  };
+}
+
 /**
  * Weekly-target streak: consecutive weeks that met the target add their check-ins.
  * The current week never breaks the streak while its target can still be reached.
