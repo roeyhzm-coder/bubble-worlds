@@ -102,8 +102,6 @@ export interface Bubble {
   daily_targets_by_date?: Record<string, number>;
   /** Manual position among siblings (absent = after ordered items, in creation order). */
   order_index?: number;
-  /** Pinned to the hub's "Obsidian" black-star zone (any number of items may be starred). */
-  is_black_star?: boolean;
   /**
    * Local-only clock (ms) of the last change to any extras field. Synced inside the
    * bubble_extras entry so two devices merge per item instead of overwriting the blob.
@@ -127,7 +125,6 @@ export const BUBBLE_EXTRA_KEYS = [
   "daily_counts",
   "daily_targets_by_date",
   "order_index",
-  "is_black_star",
 ] as const;
 
 /** Item fields synced via the `bubble_extras` setting instead of bw_bubbles columns. */
@@ -164,6 +161,8 @@ export interface DailyTask {
   date: string;
   rollover_count: number;
   order_index: number;
+  /** Pinned to the daily focus zone; any number of a day's tasks may be starred. */
+  is_black_star?: boolean;
   /** ms of the last create / edit / toggle / move; the newer copy wins a cloud merge. */
   updated_at?: number;
 }

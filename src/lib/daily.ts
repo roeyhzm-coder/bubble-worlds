@@ -25,6 +25,7 @@ export function asDailyTasks(value: unknown): DailyTask[] {
       rollover_count: Math.max(0, Number(row.rollover_count) || 0),
       order_index: typeof row.order_index === "number" ? row.order_index : index,
       updated_at: typeof row.updated_at === "number" && Number.isFinite(row.updated_at) ? row.updated_at : 0,
+      ...(row.is_black_star === true ? { is_black_star: true } : {}),
     }));
 }
 

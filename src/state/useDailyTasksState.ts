@@ -14,6 +14,8 @@ export interface DailyTasksState {
   dailyViewDate: string;
   setDailyViewDate: (date: string) => void;
   moveDailyTask: (id: string, date: string) => void;
+  /** Makes exactly `ids` the starred focus tasks of `date` (0, 1 or many). */
+  setDailyStars: (date: string, ids: string[]) => void;
 }
 
 export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksState {
@@ -132,6 +134,25 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
     [mutate, persistDaily],
   );
 
+  const setDailyStars = useCallback(
+    (date: string, ids: string[]) => {
+      const chosen = new Set(ids);
+      const now = Date.now();
+      mutate((prev) => ({
+        ...prev,
+        dailyTasks: persistDaily(
+          prev.dailyTasks.map((item) => {
+            if (item.date !== date) return item;
+            const starred = chosen.has(item.id);
+            return Boolean(item.is_black_star) === starred ? item : { ...item, is_black_star: starred, updated_at: now };
+          }),
+          prev.deletedIds,
+        ),
+      }));
+    },
+    [mutate, persistDaily],
+  );
+
   return useMemo(
     () => ({
       addDailyTask,
@@ -141,7 +162,17 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       dailyViewDate,
       setDailyViewDate,
       moveDailyTask,
+      setDailyStars,
     }),
-    [addDailyTask, dailyViewDate, deleteDailyTask, moveDailyTask, setDailyViewDate, toggleDailyTask, updateDailyTask],
+    [
+      addDailyTask,
+      dailyViewDate,
+      deleteDailyTask,
+      moveDailyTask,
+      setDailyStars,
+      setDailyViewDate,
+      toggleDailyTask,
+      updateDailyTask,
+    ],
   );
 }

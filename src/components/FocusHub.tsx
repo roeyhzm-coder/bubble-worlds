@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { accentFill } from "../lib/accent";
@@ -9,7 +9,6 @@ import { dueText } from "../lib/triangles";
 import { isItemCompleted, sessionProgress, trackingProgress } from "../lib/tracking";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, RoutineTime, TriangleType } from "../types";
-import { BlackStarSelector } from "./BlackStarSelector";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ReorderButtons } from "./ReorderButtons";
 import {
@@ -50,7 +49,6 @@ export function FocusHub() {
   // Session-only: the hub always opens on "הכל" so nothing is hidden unexpectedly.
   const [routineFilter, setRoutineFilter] = useState<RoutineFilter>("all");
   const [includeGeneral, setIncludeGeneral] = useState(true);
-  const [starPicker, setStarPicker] = useState(false);
   const nowSlot = useCurrentRoutine();
 
   useEscape(reordering, () => setReordering(false));
@@ -71,8 +69,7 @@ export function FocusHub() {
       return next;
     });
 
-  // Every active item by triangle type; the selector lists these, the accordions skip starred ones.
-  const activeGroups = useMemo(() => {
+  const groups = useMemo(() => {
     return snapshot.triangleTypes
       .slice()
       .sort((a, b) => a.order_index - b.order_index)
@@ -82,27 +79,6 @@ export function FocusHub() {
       }))
       .filter((group) => group.items.length > 0);
   }, [snapshot.bubbles, snapshot.triangleTypes]);
-
-  const starred = useMemo(
-    () =>
-      activeGroups.flatMap(({ type, items }) =>
-        items.filter((item) => item.is_black_star).map((item) => ({ type, item })),
-      ),
-    [activeGroups],
-  );
-
-  const groups = useMemo(
-    () =>
-      activeGroups
-        .map(({ type, items }) => ({ type, items: items.filter((item) => !item.is_black_star) }))
-        .filter((group) => group.items.length > 0),
-    [activeGroups],
-  );
-
-  const openSource = (item: Bubble) => {
-    setDrill(item.parent_bubble_id ? { kind: "bubble", id: item.parent_bubble_id } : { kind: "category", id: item.category_id });
-    setPage(0);
-  };
 
   const allCollapsed = groups.every(({ type }) => !expanded.has(type.id));
   const activeSlot = routineFilter === "all" ? null : routineFilter === "now" ? nowSlot : routineFilter;
@@ -147,7 +123,14 @@ export function FocusHub() {
             open={openId === item.id}
             onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
             onDelete={() => setPendingDelete(item.id)}
-            onSource={() => openSource(item)}
+            onSource={() => {
+              setDrill(
+                item.parent_bubble_id
+                  ? { kind: "bubble", id: item.parent_bubble_id }
+                  : { kind: "category", id: item.category_id },
+              );
+              setPage(0);
+            }}
           />
         ))}
       </div>
@@ -173,22 +156,6 @@ export function FocusHub() {
           <div className="text-[11px] text-slate-400">כל הפריטים לפי סוג משולש</div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          {activeGroups.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setStarPicker(true)}
-              aria-haspopup="dialog"
-              className="inline-flex h-8 items-center gap-1 rounded-full border border-slate-700/60 bg-gradient-to-b from-slate-800 to-slate-950 px-2.5 text-[11px] font-extrabold text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_6px_14px_-8px_rgba(15,23,42,0.7)]"
-            >
-              <span className="text-amber-300" aria-hidden="true">★</span>
-              ניהול מיקוד שחור
-              {starred.length > 0 && (
-                <span className="rounded-full bg-amber-300 px-1.5 text-[10px] leading-4 text-slate-950">
-                  {starred.length}
-                </span>
-              )}
-            </button>
-          )}
           {openId && !reordering && (
             <button
               type="button"
@@ -245,55 +212,6 @@ export function FocusHub() {
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pb-24 no-scrollbar">
-        <AnimatePresence initial={false}>
-          {starred.length > 0 && (
-            <motion.section
-              key="obsidian-zone"
-              layout
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ type: "spring", stiffness: 380, damping: 34 }}
-              aria-label="מיקוד שחור"
-              className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-2.5 shadow-[0_18px_40px_-18px_rgba(15,23,42,0.85)]"
-            >
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -top-16 left-1/2 h-32 w-48 -translate-x-1/2 rounded-full bg-amber-300/10 blur-3xl"
-              />
-              <div className="relative mb-2 flex h-7 items-center gap-1.5 px-1">
-                <span className="text-sm text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.55)]" aria-hidden="true">★</span>
-                <span className="text-[12px] font-extrabold tracking-wide text-slate-100">מיקוד שחור</span>
-                <span className="text-[11px] font-bold text-slate-500">· {starred.length}</span>
-              </div>
-              <div className="relative space-y-2">
-                <AnimatePresence initial={false}>
-                  {starred.map(({ type, item }) => (
-                    <motion.div
-                      key={item.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.96, y: -8 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.96 }}
-                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                    >
-                      <HubCard
-                        item={item}
-                        type={type}
-                        obsidian
-                        open={openId === item.id}
-                        onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
-                        onDelete={() => setPendingDelete(item.id)}
-                        onSource={() => openSource(item)}
-                      />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-            </motion.section>
-          )}
-        </AnimatePresence>
-
         {groups.map(({ type, items }) => {
           const groupOpen = expanded.has(type.id);
           const tracking = supportsRoutine(type);
@@ -426,14 +344,13 @@ export function FocusHub() {
           );
         })}
 
-        {activeGroups.length === 0 && (
+        {groups.length === 0 && (
           <div className="grid h-40 place-items-center text-sm text-slate-400">
             אין עדיין פריטים עם משולש. פריטים כלליים נשארים ברשימת המקור עד שמשייכים להם סוג.
           </div>
         )}
       </div>
       <HubDeleteDialog id={pendingDelete} onClose={() => setPendingDelete(null)} />
-      <BlackStarSelector open={starPicker} groups={activeGroups} onClose={() => setStarPicker(false)} />
     </section>
   );
 }
@@ -458,7 +375,6 @@ function HubDeleteDialog({ id, onClose }: { id: string | null; onClose: () => vo
 function HubCard({
   item,
   type,
-  obsidian = false,
   open,
   onToggle,
   onDelete,
@@ -466,25 +382,21 @@ function HubCard({
 }: {
   item: Bubble;
   type: TriangleType;
-  /** Dark black-star card: same tools, re-toned by the `.obsidian` CSS scope. */
-  obsidian?: boolean;
   open: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onSource: () => void;
 }) {
-  const { setTriangleType, updateBubble } = useApp();
+  const { setTriangleType } = useApp();
   const progress = trackingProgress(item);
   const completed = isItemCompleted(item, type.template);
-  const surface = obsidian
-    ? `obsidian rounded-2xl border bg-slate-900 text-slate-100 shadow-xl transition-shadow ${
-        completed ? "border-amber-300/70 ring-2 ring-amber-300/40" : "border-slate-700/50"
-      } ${open ? "ring-1 ring-amber-300/30" : ""}`
-    : `rounded-2xl border bg-white transition-shadow ${
-        completed ? "border-amber-300 ring-2 ring-amber-200" : "border-slate-100"
-      } ${open ? "shadow-md" : ""}`;
   return (
-    <div className={surface} style={open && !completed && !obsidian ? accentRing(type.color) : undefined}>
+    <div
+      className={`rounded-2xl border bg-white transition-shadow ${
+        completed ? "border-amber-300 ring-2 ring-amber-200" : "border-slate-100"
+      } ${open ? "shadow-md" : ""}`}
+      style={open && !completed ? accentRing(type.color) : undefined}
+    >
       <div className="flex min-h-12 w-full items-center gap-1 px-2">
       <QuickCheck item={item} type={type} size={36} />
       <button
@@ -495,14 +407,6 @@ function HubCard({
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
-            {obsidian && (
-              <span
-                className="shrink-0 text-[15px] leading-none text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.5)]"
-                aria-label="מיקוד שחור"
-              >
-                ★
-              </span>
-            )}
             <span className="truncate text-[14px] font-bold text-slate-800">{item.title || "ללא שם"}</span>
             <NoteIndicator notes={item.notes} />
           </div>
@@ -560,18 +464,6 @@ function HubCard({
             </div>
           </div>
           <TypeTools item={item} spacious={type.template === "thought"} />
-          {obsidian && (
-            <div className="px-3 pb-2">
-              <button
-                type="button"
-                onClick={() => updateBubble(item.id, { is_black_star: false })}
-                className="flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-amber-300/25 text-[12px] font-extrabold text-amber-200 hover:bg-amber-300/10"
-              >
-                <span aria-hidden="true">☆</span>
-                הסר מהמיקוד השחור
-              </button>
-            </div>
-          )}
           <div className="flex px-3 pb-3">
             <DoneEditingButton onDone={onToggle} />
           </div>
