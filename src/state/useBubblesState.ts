@@ -64,6 +64,8 @@ export interface BubblesState {
   splitIntoNewList: (name: string, ids: string[], at: DrillNode) => DrillNode | null;
   /** Saves `orderedIds` as the manual order (index = position) for those items. */
   reorderItems: (orderedIds: string[]) => void;
+  /** Makes exactly `ids` the black-star items among active (non-archived) items. */
+  setBlackStars: (ids: string[]) => void;
   moveNode: (type: "category" | "bubble", id: string, x: number, y: number) => void;
   markToday: (id: string) => void;
   unmarkToday: (id: string) => void;
@@ -495,6 +497,23 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
     [mutate, scheduleExtrasSync],
   );
 
+  const setBlackStars = useCallback(
+    (ids: string[]) => {
+      const chosen = new Set(ids);
+      const now = Date.now();
+      mutate((prev) => ({
+        ...prev,
+        bubbles: prev.bubbles.map((b) => {
+          if (b.archived) return b;
+          const starred = chosen.has(b.id);
+          return Boolean(b.is_black_star) === starred ? b : { ...b, is_black_star: starred, extras_updated_at: now };
+        }),
+      }));
+      scheduleExtrasSync();
+    },
+    [mutate, scheduleExtrasSync],
+  );
+
   const moveNode = useCallback(
     (type: "category" | "bubble", id: string, x: number, y: number) => {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -601,6 +620,7 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
       moveItems,
       splitIntoNewList,
       reorderItems,
+      setBlackStars,
       moveNode,
       markToday,
       unmarkToday,
@@ -626,6 +646,7 @@ export function useBubblesState(store: Store, nav: NavigationState, undo: UndoSt
       moveNode,
       reorderItems,
       resetTracking,
+      setBlackStars,
       splitIntoNewList,
       toggleTrackingDate,
       unmarkToday,

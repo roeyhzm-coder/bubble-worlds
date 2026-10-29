@@ -35,11 +35,18 @@ export const PALETTE = [
 
 export const DEFAULT_PAGE_LABELS: PageLabels = {
   map: "עולמות",
-  hub: "מוקדי פוקוס",
+  hub: "מעקב",
   daily: "משימות יומיות",
   successes: "הצלחות",
   studio: "ניהול משולשים",
 };
+
+/** The hub tab was renamed; only the untouched old default is replaced, custom names stay. */
+const LEGACY_HUB_LABEL = "מוקדי פוקוס";
+
+export function migrateHubLabel(label: string): string {
+  return label.trim() === LEGACY_HUB_LABEL ? DEFAULT_PAGE_LABELS.hub : label;
+}
 
 export const EMPTY_SNAPSHOT: AppSnapshot = {
   categories: [],
@@ -94,7 +101,10 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
       };
     }),
     colorRoles: { ...DEFAULT_COLOR_ROLES, ...snapshot.colorRoles },
-    pageLabels: { ...DEFAULT_PAGE_LABELS, ...snapshot.pageLabels },
+    pageLabels: (() => {
+      const labels = { ...DEFAULT_PAGE_LABELS, ...snapshot.pageLabels };
+      return { ...labels, hub: migrateHubLabel(labels.hub) };
+    })(),
     listViews: { ...snapshot.listViews },
     triangleTypes: mergeTriangleTypes(snapshot.triangleTypes ?? []),
     dailyTasks: applyDailyRollover(asDailyTasks(snapshot.dailyTasks), todayKey(), { deleted }),

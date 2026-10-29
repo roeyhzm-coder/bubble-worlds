@@ -86,8 +86,8 @@ export function PageSwitcher({
   const labels = snapshot.pageLabels;
   const tabs = [
     { id: 0, emoji: "🌐", key: "map" as const, value: labels.map },
-    { id: 1, emoji: "🎯", key: "hub" as const, value: labels.hub },
-    { id: 2, emoji: "✅", key: "daily" as const, value: labels.daily },
+    { id: 1, emoji: "✅", key: "daily" as const, value: labels.daily },
+    { id: 2, emoji: "🎯", key: "hub" as const, value: labels.hub },
     { id: 3, emoji: "🏆", key: "successes" as const, value: labels.successes },
     { id: 4, emoji: "⚙️", key: "studio" as const, value: labels.studio },
   ];

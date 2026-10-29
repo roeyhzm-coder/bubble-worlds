@@ -132,23 +132,23 @@ export default function App() {
 
       <SwipePager page={page} onPage={setPage} locked={dragging || navLock}>
         <WorldMap onDragChange={setDragging} />
-        <FocusHub />
         <DailyTasks />
+        <FocusHub />
         {lazyPage(3, <Successes />)}
         {lazyPage(4, <TriangleStudio />)}
       </SwipePager>
 
-      {page !== 1 && page !== 3 && (
+      {page !== 2 && page !== 3 && (
         <button
           type="button"
           onClick={() => {
-            if (page === 2) addDailyTask();
+            if (page === 1) addDailyTask();
             else if (page === 4) addTriangleType();
             else requestCreate();
           }}
           className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_12px_26px_-10px_rgba(79,70,229,0.55)] active:scale-95"
-          aria-label={page === 2 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
-          title={page === 2 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
+          aria-label={page === 1 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
+          title={page === 1 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
         >
           <Plus size={24} />
         </button>

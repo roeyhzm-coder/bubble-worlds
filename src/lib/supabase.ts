@@ -12,7 +12,7 @@ import {
   type WorldKind,
 } from "../types";
 import { applyDailyRollover, asDailyTasks } from "./daily";
-import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS, todayKey } from "./defaults";
+import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS, migrateHubLabel, todayKey } from "./defaults";
 import { asSuccesses } from "./successes";
 import { asDayMap, asSessionLog } from "./tracking";
 import { asActionSteps, asTriangleTypes } from "./triangles";
@@ -97,7 +97,7 @@ function asPageLabels(value: unknown): PageLabels {
   const rec = value as Partial<PageLabels>;
   return {
     map: rec.map?.trim() || DEFAULT_PAGE_LABELS.map,
-    hub: rec.hub?.trim() || DEFAULT_PAGE_LABELS.hub,
+    hub: migrateHubLabel(rec.hub?.trim() || DEFAULT_PAGE_LABELS.hub),
     daily: rec.daily?.trim() || DEFAULT_PAGE_LABELS.daily,
     successes: rec.successes?.trim() || DEFAULT_PAGE_LABELS.successes,
     studio: rec.studio?.trim() || DEFAULT_PAGE_LABELS.studio,
@@ -157,6 +157,7 @@ export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExt
       extras.daily_targets_by_date = bubble.daily_targets_by_date;
     }
     if (typeof bubble.order_index === "number") extras.order_index = bubble.order_index;
+    if (bubble.is_black_star) extras.is_black_star = true;
     if (bubble.extras_updated_at) extras.updated_at = bubble.extras_updated_at;
     if (Object.keys(extras).length) out[bubble.id] = extras;
   }
@@ -178,6 +179,7 @@ const EXTRA_DEFAULTS: BubbleExtrasEntry = {
   daily_counts: {},
   daily_targets_by_date: {},
   order_index: undefined,
+  is_black_star: false,
 };
 
 function asRoutineTime(value: unknown): RoutineTime {
@@ -208,6 +210,7 @@ function asExtras(value: unknown): Record<string, BubbleExtrasEntry> {
       daily_counts: asDayMap(rec.daily_counts),
       daily_targets_by_date: asDayMap(rec.daily_targets_by_date),
       order_index: typeof rec.order_index === "number" ? rec.order_index : undefined,
+      is_black_star: rec.is_black_star === true,
       updated_at: typeof rec.updated_at === "number" ? rec.updated_at : undefined,
     };
   }

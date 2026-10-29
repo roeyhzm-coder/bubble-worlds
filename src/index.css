@@ -67,3 +67,66 @@ textarea {
     @apply inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-extrabold;
   }
 }
+
+/*
+ * Obsidian (black-star) cards reuse the regular item tools; this scope re-tones their
+ * light-surface utilities for a dark background instead of forking every tool component.
+ */
+.obsidian {
+  color-scheme: dark;
+}
+.obsidian .bg-white,
+.obsidian .bg-white\/80,
+.obsidian .bg-slate-50,
+.obsidian .bg-slate-50\/50,
+.obsidian .bg-slate-50\/80 {
+  background-color: rgb(255 255 255 / 0.06);
+}
+.obsidian .bg-slate-100,
+.obsidian .bg-slate-200 {
+  background-color: rgb(255 255 255 / 0.1);
+}
+.obsidian .bg-slate-900 {
+  background-color: rgb(51 65 85);
+}
+.obsidian .hover\:bg-white:hover,
+.obsidian .hover\:bg-white\/70:hover,
+.obsidian .hover\:bg-white\/80:hover,
+.obsidian .hover\:bg-slate-50:hover,
+.obsidian .hover\:bg-slate-50\/80:hover,
+.obsidian .hover\:bg-slate-100:hover {
+  background-color: rgb(255 255 255 / 0.12);
+}
+.obsidian .focus-within\:bg-white:focus-within {
+  background-color: rgb(255 255 255 / 0.1);
+}
+.obsidian .focus-within\:ring-indigo-200:focus-within {
+  --tw-ring-color: rgb(251 191 36 / 0.45);
+}
+.obsidian .text-slate-900,
+.obsidian .text-slate-800 {
+  color: rgb(241 245 249);
+}
+.obsidian .text-slate-700 {
+  color: rgb(226 232 240);
+}
+.obsidian .text-slate-600,
+.obsidian .text-slate-500 {
+  color: rgb(203 213 225);
+}
+.obsidian .text-slate-400 {
+  color: rgb(148 163 184);
+}
+.obsidian .border-slate-100,
+.obsidian .border-slate-200,
+.obsidian .border-slate-200\/60,
+.obsidian .border-slate-200\/70,
+.obsidian .border-slate-300 {
+  border-color: rgb(255 255 255 / 0.1);
+}
+.obsidian .ring-slate-200 {
+  --tw-ring-color: rgb(255 255 255 / 0.12);
+}
+.obsidian ::placeholder {
+  color: rgb(100 116 139);
+}
