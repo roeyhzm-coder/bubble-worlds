@@ -86,8 +86,10 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
     bubbles: bubbles.map((bubble) => {
       const hasChildren = bubbles.some((child) => child.parent_bubble_id === bubble.id);
       const triangle_id = inferTriangleId(bubble);
+      // `is_black_star` briefly lived on bubbles (now on daily tasks); drop the stale copy.
+      const { is_black_star: _retired, ...current } = bubble as Bubble & { is_black_star?: unknown };
       return {
-        ...bubble,
+        ...current,
         container_type:
           asWorldKind(bubble.container_type) ?? (hasChildren ? "bubbles" : null),
         triangle_id,

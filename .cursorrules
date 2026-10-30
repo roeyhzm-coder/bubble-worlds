@@ -1,0 +1,12 @@
+### CRITICAL ARCHITECTURE & MULTI-DEVICE SYNC RULES ###
+1. STRICT SUPABASE SCHEMA BOUNDARY (NO SQL MIGRATIONS):
+   - NEVER add new top-level columns to the `bw_bubbles` or `bw_categories` tables.
+   - Any new properties, metadata, or feature flags (e.g., `is_black_star`, `routine_time`) MUST be stored securely inside the `bubble_extras` JSON setting or the `daily_tasks` array within the `bw_app_settings` table.
+2. PAYLOAD SANITIZATION:
+   - Before upserting data to Supabase (e.g., `bw_bubbles`), explicitly omit/strip frontend-only state or `bubble_extras` properties (using `toBubbleRow`). Sending unregistered columns breaks the sync.
+3. OFFLINE-FIRST & MULTI-DEVICE MERGING:
+   - LocalStorage is the immediate source of truth.
+   - Cloud syncs must ALWAYS merge data granularly using per-item timestamps (`updated_at`). NEVER blindly overwrite the cloud/local state without resolving conflicts based on `updated_at`.
+   - Deleted items must be tracked via `deleted_ids` (tombstones) so they are never resurrected.
+4. FAIL-SAFE SYNC RESILIENCY:
+   - Always wrap JSON parsing in `try/catch` blocks during sync. Fall back gracefully to local versions instead of crashing the entire sync loop.

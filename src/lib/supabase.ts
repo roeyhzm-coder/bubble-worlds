@@ -131,14 +131,83 @@ function normalizeCategory(row: Category): Category {
   return { ...row, container_type: asWorldKind(row.container_type) };
 }
 
-/** Local-only bubble fields that never exist as bw_bubbles columns. */
-const NON_COLUMN_KEYS = [...BUBBLE_EXTRA_KEYS, "extras_updated_at"] as const;
+/**
+ * The exact bw_bubbles columns (scripts/init-db.sql). Rows are built from this whitelist, so a
+ * stray field on a local bubble (e.g. the retired `is_black_star`) can never reach PostgREST.
+ * The schema is frozen: new item fields go in BUBBLE_EXTRA_KEYS (the bubble_extras setting).
+ */
+const BUBBLE_COLUMNS = [
+  "id",
+  "parent_bubble_id",
+  "category_id",
+  "title",
+  "notes",
+  "color",
+  "status",
+  "position_x",
+  "position_y",
+  "size_multiplier",
+  "created_at",
+  "is_tracking",
+  "target_days",
+  "weekly_frequency",
+  "tracking_history",
+  "streak_mode",
+  "container_type",
+  "triangle_id",
+  "due_at",
+  "due_label",
+  "action_done",
+  "action_steps",
+] as const satisfies readonly (keyof Bubble)[];
 
-/** Row payload for bw_bubbles: extras live in the bubble_extras setting, not in table columns. */
-export function toBubbleRow(bubble: Bubble): Omit<Bubble, (typeof NON_COLUMN_KEYS)[number]> {
-  const row: Record<string, unknown> = { ...bubble };
-  for (const key of NON_COLUMN_KEYS) delete row[key];
-  return row as Omit<Bubble, (typeof NON_COLUMN_KEYS)[number]>;
+/** The exact bw_categories columns (scripts/init-db.sql). */
+const CATEGORY_COLUMNS = [
+  "id",
+  "name",
+  "color",
+  "position_x",
+  "position_y",
+  "order_index",
+  "created_at",
+  "container_type",
+] as const satisfies readonly (keyof Category)[];
+
+export type BubbleRow = Pick<Bubble, (typeof BUBBLE_COLUMNS)[number]>;
+export type CategoryRow = Pick<Category, (typeof CATEGORY_COLUMNS)[number]>;
+
+/**
+ * Compile-time guard: every Bubble field must be a column, an extras key, or the local clock.
+ * Adding a field to Bubble without registering it in BUBBLE_EXTRA_KEYS fails the build.
+ */
+type UnroutedBubbleField = Exclude<
+  keyof Bubble,
+  (typeof BUBBLE_COLUMNS)[number] | (typeof BUBBLE_EXTRA_KEYS)[number] | "extras_updated_at"
+>;
+const bubbleFieldsRouted: [UnroutedBubbleField] extends [never] ? true : UnroutedBubbleField = true;
+void bubbleFieldsRouted;
+
+/** Same guard for categories, which have no extras channel at all. */
+type UnroutedCategoryField = Exclude<keyof Category, (typeof CATEGORY_COLUMNS)[number]>;
+const categoryFieldsRouted: [UnroutedCategoryField] extends [never] ? true : UnroutedCategoryField = true;
+void categoryFieldsRouted;
+
+function pickColumns<T extends object, K extends keyof T>(source: T, columns: readonly K[]): Pick<T, K> {
+  const row = {} as Pick<T, K>;
+  for (const column of columns) {
+    if (source[column] !== undefined) row[column] = source[column];
+  }
+  return row;
+}
+
+/** Row payload for bw_bubbles: only registered columns; extras live in the bubble_extras setting. */
+export function toBubbleRow(bubble: Bubble): BubbleRow {
+  return pickColumns(bubble, BUBBLE_COLUMNS);
+}
+
+/** Row payload for bw_categories: only registered columns. */
+export function toCategoryRow(category: Category): CategoryRow {
+  return pickColumns(category, CATEGORY_COLUMNS);
 }
 
 /**
@@ -344,7 +413,7 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
 export async function upsertCategory(category: Category): Promise<void> {
   const supabase = await getClient();
   if (!supabase) return;
-  const { error } = await supabase.from(BW_TABLES.categories).upsert(category);
+  const { error } = await supabase.from(BW_TABLES.categories).upsert(toCategoryRow(category));
   if (error) console.warn("upsert category", error.message);
 }
 
@@ -478,7 +547,7 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
   ];
   // Categories first so bubbles never reference a missing parent row.
   if (snapshot.categories.length) {
-    const { error } = await client.from(BW_TABLES.categories).upsert(snapshot.categories);
+    const { error } = await client.from(BW_TABLES.categories).upsert(snapshot.categories.map(toCategoryRow));
     if (error) result.errors.push(`עולמות: ${error.message}`);
   }
   if (snapshot.bubbles.length) {
@@ -524,7 +593,7 @@ export async function forcePushSnapshotToCloud(snapshot: AppSnapshot): Promise<P
   ];
   // Categories first so bubbles never reference a missing parent row; the rest goes in parallel.
   if (snapshot.categories.length) {
-    const { error } = await client.from(BW_TABLES.categories).upsert(snapshot.categories);
+    const { error } = await client.from(BW_TABLES.categories).upsert(snapshot.categories.map(toCategoryRow));
     if (error) result.errors.push(`עולמות: ${error.message}`);
   }
   const [bubblesWrite, settingsWrite] = await Promise.all([
