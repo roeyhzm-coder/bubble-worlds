@@ -82,9 +82,17 @@ type RemoteBubble = Omit<Bubble, "tracking_history"> & {
   tracking_history: unknown;
 };
 
+/** jsonb normally arrives parsed; a value stored as a JSON string is parsed here (throws if corrupt). */
+function parseJsonish(value: unknown): unknown {
+  return typeof value === "string" ? (JSON.parse(value) as unknown) : value;
+}
+
+/** Throws on a corrupted payload so the caller can fall back to the local copy of that item. */
 function asHistory(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string");
+  const parsed = parseJsonish(value);
+  if (parsed === null || parsed === undefined) return [];
+  if (!Array.isArray(parsed)) throw new Error("tracking_history is not an array");
+  return parsed.filter((item): item is string => typeof item === "string");
 }
 
 function asRoles(value: unknown): ColorRoles {
@@ -184,13 +192,43 @@ function asRoutineTime(value: unknown): RoutineTime {
   return value === "morning" || value === "noon" || value === "evening" ? value : "general";
 }
 
+interface ParsedExtras {
+  entries: Record<string, BubbleExtrasEntry>;
+  /** Ids whose remote entry was unreadable: callers keep the local values for these. */
+  corrupt: Set<string>;
+}
+
+/** Per-entry tolerant parse: one bad entry never fails the map, it is reported in `corrupt`. */
+function parseExtras(value: unknown): ParsedExtras {
+  const entries: Record<string, BubbleExtrasEntry> = {};
+  const corrupt = new Set<string>();
+  const parsed = parseJsonish(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { entries, corrupt };
+  for (const [id, raw] of Object.entries(parsed as Record<string, unknown>)) {
+    try {
+      const entry = parseJsonish(raw);
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("not an object");
+      entries[id] = asExtrasEntry(entry as Record<string, unknown>);
+    } catch (error) {
+      console.warn(`bubble_extras entry ${id} is corrupted; keeping the local copy`, error);
+      corrupt.add(id);
+    }
+  }
+  return { entries, corrupt };
+}
+
+/** Lenient read used by the fetch-before-write merge: unreadable payloads count as empty. */
 function asExtras(value: unknown): Record<string, BubbleExtrasEntry> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Record<string, BubbleExtrasEntry> = {};
-  for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!raw || typeof raw !== "object") continue;
-    const rec = raw as Record<string, unknown>;
-    out[id] = {
+  try {
+    return parseExtras(value).entries;
+  } catch (error) {
+    console.warn("bubble_extras payload is corrupted; treating the cloud copy as empty", error);
+    return {};
+  }
+}
+
+function asExtrasEntry(rec: Record<string, unknown>): BubbleExtrasEntry {
+  return {
       challenge_done: Boolean(rec.challenge_done),
       done_offset: typeof rec.done_offset === "number" ? rec.done_offset : 0,
       streak_offset: typeof rec.streak_offset === "number" ? rec.streak_offset : 0,
@@ -209,9 +247,7 @@ function asExtras(value: unknown): Record<string, BubbleExtrasEntry> {
       daily_targets_by_date: asDayMap(rec.daily_targets_by_date),
       order_index: typeof rec.order_index === "number" ? rec.order_index : undefined,
       updated_at: typeof rec.updated_at === "number" ? rec.updated_at : undefined,
-    };
-  }
-  return out;
+  };
 }
 
 /**
@@ -268,13 +304,31 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     (settings.data ?? []).map((row: { key: string; value: unknown }) => [row.key, row.value]),
   );
   const deletedIds = asIdList(map.deleted_ids);
-  // Without the setting row, extras stay undefined so merging keeps the local values.
-  const extras = map.bubble_extras === undefined ? null : asExtras(map.bubble_extras);
+  // Without the setting row (or when it is unreadable), extras stay undefined so merging keeps
+  // the local values. A single corrupted entry only falls back for that one item.
+  let extras: ParsedExtras | null = null;
+  if (map.bubble_extras !== undefined) {
+    try {
+      extras = parseExtras(map.bubble_extras);
+    } catch (error) {
+      console.warn("bubble_extras payload is corrupted; keeping local extras", error);
+    }
+  }
+  // A row that fails to normalize is left out of the remote snapshot, so the merge keeps the
+  // device's copy of that item instead of failing the whole sync.
+  const bubbles: Bubble[] = [];
+  for (const row of (bubs.data ?? []) as RemoteBubble[]) {
+    try {
+      const entry =
+        !extras || extras.corrupt.has(row.id) ? undefined : (extras.entries[row.id] ?? EXTRA_DEFAULTS);
+      bubbles.push(normalizeBubble(row, entry));
+    } catch (error) {
+      console.warn(`remote bubble ${row.id} is corrupted; keeping the local copy`, error);
+    }
+  }
   return {
     categories: ((cats.data ?? []) as Category[]).map(normalizeCategory),
-    bubbles: ((bubs.data ?? []) as RemoteBubble[]).map((row) =>
-      normalizeBubble(row, extras ? (extras[row.id] ?? EXTRA_DEFAULTS) : undefined),
-    ),
+    bubbles,
     colorRoles: asRoles(map.color_roles),
     pageLabels: asPageLabels(map.page_labels),
     listViews: asListViews(map.list_views),
@@ -437,6 +491,50 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
   if (extrasError) result.errors.push(`נתוני פריטים: ${extrasError}`);
   const tombstoneError = await syncDeletedIds(snapshot.deletedIds);
   if (tombstoneError) result.errors.push(`מחיקות: ${tombstoneError}`);
+  result.ok = result.errors.length === 0;
+  return result;
+}
+
+/**
+ * Force sync: makes the cloud mirror this device. No fetch and no merge: categories, bubbles,
+ * every setting, bubble_extras and deleted_ids are written straight from `snapshot`, replacing
+ * the cloud values. Cloud rows this device doesn't know are left in place (upsert, never delete).
+ */
+export async function forcePushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushResult> {
+  const result: PushResult = {
+    ok: false,
+    categories: snapshot.categories.length,
+    bubbles: snapshot.bubbles.length,
+    errors: [],
+  };
+  const client = await getClient();
+  if (!client) {
+    result.errors.push("הענן לא מוגדר (חסרים URL או anon key)");
+    return result;
+  }
+  const settings = [
+    { key: "color_roles", value: snapshot.colorRoles },
+    { key: "page_labels", value: snapshot.pageLabels },
+    { key: "list_views", value: snapshot.listViews },
+    { key: "triangle_types", value: snapshot.triangleTypes },
+    { key: "daily_tasks", value: snapshot.dailyTasks },
+    { key: "successes", value: snapshot.successes },
+    { key: "bubble_extras", value: collectBubbleExtras(snapshot.bubbles) },
+    { key: "deleted_ids", value: asIdList(snapshot.deletedIds) },
+  ];
+  // Categories first so bubbles never reference a missing parent row; the rest goes in parallel.
+  if (snapshot.categories.length) {
+    const { error } = await client.from(BW_TABLES.categories).upsert(snapshot.categories);
+    if (error) result.errors.push(`עולמות: ${error.message}`);
+  }
+  const [bubblesWrite, settingsWrite] = await Promise.all([
+    snapshot.bubbles.length
+      ? client.from(BW_TABLES.bubbles).upsert(snapshot.bubbles.map(toBubbleRow))
+      : Promise.resolve({ error: null }),
+    client.from(BW_TABLES.settings).upsert(settings),
+  ]);
+  if (bubblesWrite.error) result.errors.push(`בועות: ${bubblesWrite.error.message}`);
+  if (settingsWrite.error) result.errors.push(`הגדרות: ${settingsWrite.error.message}`);
   result.ok = result.errors.length === 0;
   return result;
 }

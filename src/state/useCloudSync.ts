@@ -3,25 +3,53 @@ import { markRepairDone, repairDone, repairStrayListItems } from "../lib/repair"
 import { backupLocal, downloadBackup, mergeSnapshots, saveLocal } from "../lib/storage";
 import {
   fetchRemoteSnapshot,
+  forcePushSnapshotToCloud,
   isCloudEnabled,
   pushSnapshotToCloud,
   subscribeRealtime,
   syncDeletedIds,
   type PushResult,
 } from "../lib/supabase";
+import type { AppSnapshot } from "../types";
 import type { Store } from "./store";
+
+/** Realtime echoes of a force push are ignored for this long (ms). */
+const FORCE_PUSH_QUIET_MS = 5000;
+
+function failedPush(snapshot: AppSnapshot, error: unknown): PushResult {
+  return {
+    ok: false,
+    categories: snapshot.categories.length,
+    bubbles: snapshot.bubbles.length,
+    errors: [error instanceof Error ? error.message : String(error)],
+  };
+}
+
+/**
+ * Same data, fresh clocks: every per-item extras entry and daily task is stamped now, so the
+ * last-write-wins merges on other devices accept this device's copy instead of a stale one.
+ */
+function stampForForcePush(snapshot: AppSnapshot, now: number): AppSnapshot {
+  return {
+    ...snapshot,
+    bubbles: snapshot.bubbles.map((bubble) => ({ ...bubble, extras_updated_at: now })),
+    dailyTasks: snapshot.dailyTasks.map((task) => ({ ...task, updated_at: now })),
+  };
+}
 
 export interface CloudSync {
   cloud: boolean;
   syncing: boolean;
   lastPush: PushResult | null;
   pushToCloud: () => Promise<PushResult>;
+  /** Overwrites the cloud with this device's local state: no fetch, no merge. */
+  forcePushLocalToCloud: () => Promise<PushResult>;
   exportBackup: () => void;
 }
 
 /** Local persistence, startup cloud merge, realtime updates and manual push/backup. */
 export function useCloudSync(store: Store): CloudSync {
-  const { snapshot, snapshotRef, setSnapshot, ignoreRemoteUntil, applyingRemote } = store;
+  const { snapshot, snapshotRef, setSnapshot, ignoreRemoteUntil, applyingRemote, commit } = store;
   const [syncing, setSyncing] = useState(false);
   const [lastPush, setLastPush] = useState<PushResult | null>(null);
   const pushingRef = useRef<Promise<PushResult> | null>(null);
@@ -32,14 +60,7 @@ export function useCloudSync(store: Store): CloudSync {
     const current = snapshotRef.current;
     backupLocal(current);
     const run = pushSnapshotToCloud(current)
-      .catch(
-        (error: unknown): PushResult => ({
-          ok: false,
-          categories: current.categories.length,
-          bubbles: current.bubbles.length,
-          errors: [error instanceof Error ? error.message : String(error)],
-        }),
-      )
+      .catch((error: unknown): PushResult => failedPush(current, error))
       .then((result) => {
         setLastPush(result);
         if (!result.ok) console.warn("cloud push failed", result.errors);
@@ -52,6 +73,38 @@ export function useCloudSync(store: Store): CloudSync {
     pushingRef.current = run;
     return run;
   }, [snapshotRef]);
+
+  const forcingRef = useRef<Promise<PushResult> | null>(null);
+
+  const forcePushLocalToCloud = useCallback((): Promise<PushResult> => {
+    if (forcingRef.current) return forcingRef.current;
+    setSyncing(true);
+    const run = (async (): Promise<PushResult> => {
+      // Let a regular push already in flight finish first so it can't land after the overwrite.
+      await pushingRef.current?.catch(() => null);
+      const local = snapshotRef.current;
+      backupLocal(local);
+      const stamped = stampForForcePush(local, Date.now());
+      commit(stamped, FORCE_PUSH_QUIET_MS);
+      try {
+        return await forcePushSnapshotToCloud(stamped);
+      } catch (error) {
+        return failedPush(stamped, error);
+      }
+    })()
+      .then((result) => {
+        ignoreRemoteUntil.current = Date.now() + FORCE_PUSH_QUIET_MS;
+        setLastPush(result);
+        if (!result.ok) console.warn("force push failed", result.errors);
+        return result;
+      })
+      .finally(() => {
+        forcingRef.current = null;
+        setSyncing(false);
+      });
+    forcingRef.current = run;
+    return run;
+  }, [commit, ignoreRemoteUntil, snapshotRef]);
 
   const exportBackup = useCallback(() => {
     backupLocal(snapshotRef.current);
@@ -79,12 +132,23 @@ export function useCloudSync(store: Store): CloudSync {
     let cancelled = false;
     backupLocal(snapshotRef.current);
     void (async () => {
-      const remote = await fetchRemoteSnapshot();
+      let remote: AppSnapshot | null = null;
+      try {
+        remote = await fetchRemoteSnapshot();
+      } catch (error) {
+        console.warn("startup cloud fetch failed; keeping local data", error);
+      }
       if (!remote || cancelled) return;
+      let combined: AppSnapshot;
+      try {
+        // Device data wins: every local item and field survives, remote only fills gaps
+        // (except per-item extras, where the newer edit wins).
+        combined = mergeSnapshots(snapshotRef.current, remote, "local");
+      } catch (error) {
+        console.warn("startup cloud merge failed; keeping local data", error);
+        return;
+      }
       applyingRemote.current = true;
-      // Device data wins: every local item and field survives, remote only fills gaps
-      // (except per-item extras, where the newer edit wins).
-      const combined = mergeSnapshots(snapshotRef.current, remote, "local");
       // Runs again on the cloud-merged data: the startup push below writes the rescue to Supabase.
       const repairing = !repairDone();
       const merged = repairing ? repairStrayListItems(combined).snapshot : combined;
@@ -102,7 +166,14 @@ export function useCloudSync(store: Store): CloudSync {
     const unsubscribe = subscribeRealtime((remote) => {
       if (applyingRemote.current || Date.now() < ignoreRemoteUntil.current) return;
       applyingRemote.current = true;
-      setSnapshot((local) => mergeSnapshots(local, remote, "remote"));
+      setSnapshot((local) => {
+        try {
+          return mergeSnapshots(local, remote, "remote");
+        } catch (error) {
+          console.warn("realtime merge failed; keeping local data", error);
+          return local;
+        }
+      });
       queueMicrotask(() => {
         applyingRemote.current = false;
       });
@@ -114,7 +185,7 @@ export function useCloudSync(store: Store): CloudSync {
   }, [applyingRemote, ignoreRemoteUntil, pushToCloud, setSnapshot, snapshotRef]);
 
   return useMemo(
-    () => ({ cloud: isCloudEnabled, syncing, lastPush, pushToCloud, exportBackup }),
-    [exportBackup, lastPush, pushToCloud, syncing],
+    () => ({ cloud: isCloudEnabled, syncing, lastPush, pushToCloud, forcePushLocalToCloud, exportBackup }),
+    [exportBackup, forcePushLocalToCloud, lastPush, pushToCloud, syncing],
   );
 }

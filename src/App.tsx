@@ -1,5 +1,6 @@
-import { Cloud, CloudOff, CloudUpload, Download, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Cloud, CloudOff, CloudUpload, Download, Loader2, Plus } from "lucide-react";
 import { Suspense, lazy, useEffect, useState, type ReactElement } from "react";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DailyTasks } from "./components/DailyTasks";
 import { FocusHub } from "./components/FocusHub";
 import { PageSwitcher, SwipePager } from "./components/SwipePager";
@@ -38,6 +39,7 @@ export default function App() {
     syncing,
     lastPush,
     pushToCloud,
+    forcePushLocalToCloud,
     exportBackup,
     navLock,
     composer,
@@ -46,6 +48,9 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [visited, setVisited] = useState<Set<number>>(() => new Set([page]));
   const [editorUsed, setEditorUsed] = useState(false);
+  const [forceOpen, setForceOpen] = useState(false);
+  const [forcing, setForcing] = useState(false);
+  const syncFailed = cloud && lastPush !== null && !lastPush.ok;
 
   useEffect(() => {
     setVisited((current) => (current.has(page) ? current : new Set(current).add(page)));
@@ -72,6 +77,22 @@ export default function App() {
     );
   };
 
+  const handleForcePush = async () => {
+    if (forcing) return;
+    setForcing(true);
+    try {
+      const result = await forcePushLocalToCloud();
+      if (result.ok) {
+        setForceOpen(false);
+        setNotice("הענן עודכן בהצלחה לפי המכשיר הזה");
+      } else {
+        setNotice(`הסנכרון הכפוי נכשל: ${result.errors[0] ?? "שגיאה לא ידועה"}`);
+      }
+    } finally {
+      setForcing(false);
+    }
+  };
+
   const handleBackup = () => {
     exportBackup();
     setNotice("קובץ גיבוי נשמר במכשיר");
@@ -88,14 +109,23 @@ export default function App() {
             עולמות
           </div>
           <div className="flex items-center gap-1.5">
-            <div
-              className={`flex items-center gap-1 text-[11px] ${
-                lastPush && !lastPush.ok ? "text-rose-500" : "text-slate-400"
-              }`}
-            >
-              {cloud ? <Cloud size={12} /> : <CloudOff size={12} />}
-              {cloud ? (lastPush && !lastPush.ok ? "שגיאת סנכרון" : "סנכרון בענן") : "שמירה מקומית"}
-            </div>
+            {syncFailed ? (
+              <button
+                type="button"
+                onClick={() => setForceOpen(true)}
+                className="flex h-8 items-center gap-1 rounded-full bg-amber-50 px-2.5 text-[11px] font-bold text-rose-600 ring-1 ring-amber-300 active:scale-95"
+                aria-haspopup="dialog"
+                title="פתרון שגיאת הסנכרון"
+              >
+                <AlertTriangle size={12} className="text-amber-500" />
+                שגיאת סנכרון
+              </button>
+            ) : (
+              <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                {cloud ? <Cloud size={12} /> : <CloudOff size={12} />}
+                {cloud ? "סנכרון בענן" : "שמירה מקומית"}
+              </div>
+            )}
             <button
               type="button"
               onClick={handleBackup}
@@ -160,6 +190,24 @@ export default function App() {
         </Suspense>
       )}
       <UndoToast />
+      <ConfirmDialog
+        open={forceOpen}
+        tone="warning"
+        busy={forcing}
+        title="שגיאת סנכרון מתמשכת"
+        body="האם תרצה לדרוס את נתוני הענן ולעדכן אותם בדיוק לפי מה שמופיע כעת במכשיר זה?"
+        confirmLabel="דרוס ענן וסנכרן (Force Sync) ☁️"
+        onCancel={() => setForceOpen(false)}
+        onConfirm={() => void handleForcePush()}
+      >
+        {lastPush && lastPush.errors.length > 0 && (
+          <ul className="mt-3 space-y-1 rounded-xl bg-amber-50 p-2.5 text-[11px] text-amber-800 ring-1 ring-amber-200" dir="auto">
+            {lastPush.errors.map((error) => (
+              <li key={error} className="break-words">{error}</li>
+            ))}
+          </ul>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }
