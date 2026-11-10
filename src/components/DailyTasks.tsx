@@ -1,10 +1,11 @@
-import { AnimatePresence, motion } from "framer-motion";
-import { Moon, Plus, Star, Sun, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AnimatePresence, Reorder, motion, useDragControls } from "framer-motion";
+import { GripVertical, Moon, Plus, Star, Sun, Trash2 } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { archivedTasks, bangs, dateTasks, tomorrowKey } from "../lib/daily";
 import { todayKey } from "../lib/defaults";
 import { useApp } from "../state/AppProvider";
 import { DailyStarSelector } from "./DailyStarSelector";
+import type { DailyTask } from "../types";
 
 export function DailyTasks() {
   const {
@@ -16,6 +17,7 @@ export function DailyTasks() {
     dailyViewDate,
     setDailyViewDate,
     moveDailyTask,
+    reorderDailyTasks,
   } = useApp();
   const [showArchive, setShowArchive] = useState(false);
   const [starPicker, setStarPicker] = useState(false);
@@ -34,7 +36,27 @@ export function DailyTasks() {
   const done = items.filter((item) => item.completed && item.text.trim()).length;
   const total = items.filter((item) => item.text.trim()).length;
   const starred = items.filter((item) => item.is_black_star);
-  const regular = items.filter((item) => !item.is_black_star);
+  const regular = useMemo(() => items.filter((item) => !item.is_black_star), [items]);
+  const regularIds = useMemo(() => regular.map((item) => item.id), [regular]);
+  const regularById = useMemo(() => new Map(regular.map((item) => [item.id, item])), [regular]);
+  // While a row is held, the order lives only here; the store is written once, on drop.
+  const [dragIds, setDragIdsState] = useState<string[] | null>(null);
+  const dragIdsRef = useRef<string[] | null>(null);
+  const setDragIds = useCallback((ids: string[]) => {
+    dragIdsRef.current = ids;
+    setDragIdsState(ids);
+  }, []);
+  const commitDrag = useCallback(() => {
+    const ids = dragIdsRef.current;
+    dragIdsRef.current = null;
+    setDragIdsState(null);
+    if (ids) reorderDailyTasks(viewDate, ids);
+  }, [reorderDailyTasks, viewDate]);
+  // Guard against a drag order that no longer matches the rows (a task added/removed mid-drag).
+  const orderIds =
+    dragIds && dragIds.length === regularIds.length && dragIds.every((id) => regularById.has(id))
+      ? dragIds
+      : regularIds;
 
   return (
     <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
@@ -172,67 +194,35 @@ export function DailyTasks() {
           )}
         </AnimatePresence>
 
-        {regular.map((item, index) => {
-          const marks = planningTomorrow ? "" : bangs(item.rollover_count);
-          return (
-            <div
-              key={item.id}
-              className={`card px-2 py-1 ${
-                item.completed ? "opacity-55" : ""
-              }`}
-            >
-              <div className="flex min-h-12 items-center gap-1.5">
-                <span className="w-5 shrink-0 text-center text-[12px] font-extrabold text-slate-400">
-                  {index + 1}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => toggleDailyTask(item.id)}
-                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${
-                    item.completed ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_6px_14px_-6px_rgba(16,185,129,0.7)]" : "bg-slate-100 text-slate-400 hover:bg-slate-200/70"
-                  }`}
-                  aria-label={item.completed ? "בטל סימון" : "סמן כהושלם"}
-                >
-                  V
-                </button>
-                {marks && (
-                  <span className="shrink-0 text-[15px] font-black leading-none text-rose-500">
-                    {marks}
-                  </span>
-                )}
-                <input
-                  value={item.text}
-                  onChange={(e) => updateDailyTask(item.id, { text: e.target.value })}
-                  placeholder={planningTomorrow ? "משימה למחר…" : "משימה להיום…"}
-                  className={`h-11 min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-slate-800 outline-none ${
-                    item.completed ? "line-through" : ""
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteDailyTask(item.id);
-                  }}
-                  className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
-                  aria-label={`מחיקת המשימה ${item.text || index + 1}`}
-                  title="מחיקה"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-              {item.text.trim() && (
-                <button
-                  type="button"
-                  onClick={() => moveDailyTask(item.id, planningTomorrow ? today : tomorrow)}
-                  className="mb-1 h-7 w-full rounded-lg text-[11px] font-extrabold text-slate-400 hover:bg-slate-50"
-                >
-                  {planningTomorrow ? "העבר להיום" : "העבר למחר"}
-                </button>
-              )}
-            </div>
-          );
-        })}
+        <Reorder.Group
+          as="div"
+          axis="y"
+          values={orderIds}
+          onReorder={setDragIds}
+          className="space-y-2"
+        >
+          {orderIds.map((id, index) => {
+            const item = regularById.get(id);
+            if (!item) return null;
+            return (
+              <DailyTaskRow
+                key={id}
+                item={item}
+                index={index}
+                planningTomorrow={planningTomorrow}
+                onDragStart={() => {
+                  dragIdsRef.current = regularIds;
+                  setDragIds(regularIds);
+                }}
+                onDragEnd={commitDrag}
+                onToggle={() => toggleDailyTask(id)}
+                onText={(text) => updateDailyTask(id, { text })}
+                onDelete={() => deleteDailyTask(id)}
+                onMove={() => moveDailyTask(id, planningTomorrow ? today : tomorrow)}
+              />
+            );
+          })}
+        </Reorder.Group>
 
         <button
           type="button"
@@ -275,5 +265,119 @@ export function DailyTasks() {
         onClose={() => setStarPicker(false)}
       />
     </section>
+  );
+}
+
+interface DailyTaskRowProps {
+  item: DailyTask;
+  index: number;
+  planningTomorrow: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onToggle: () => void;
+  onText: (text: string) => void;
+  onDelete: () => void;
+  onMove: () => void;
+}
+
+/** One sortable daily row. Only the grip starts a drag, so the input stays freely typable. */
+function DailyTaskRow({
+  item,
+  index,
+  planningTomorrow,
+  onDragStart,
+  onDragEnd,
+  onToggle,
+  onText,
+  onDelete,
+  onMove,
+}: DailyTaskRowProps) {
+  const controls = useDragControls();
+  const [dragging, setDragging] = useState(false);
+  const marks = planningTomorrow ? "" : bangs(item.rollover_count);
+  return (
+    <Reorder.Item
+      as="div"
+      value={item.id}
+      dragListener={false}
+      dragControls={controls}
+      onDragStart={() => {
+        setDragging(true);
+        onDragStart();
+      }}
+      onDragEnd={() => {
+        setDragging(false);
+        onDragEnd();
+      }}
+      whileDrag={{ scale: 1.02, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
+      transition={{ type: "spring", stiffness: 520, damping: 40 }}
+      className={`card relative px-2 py-1 ${item.completed && !dragging ? "opacity-55" : ""} ${
+        dragging ? "z-10" : ""
+      }`}
+    >
+      <div className="flex min-h-12 items-center gap-1.5">
+        <button
+          type="button"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            controls.start(e);
+          }}
+          className={`grid h-10 w-6 shrink-0 touch-none select-none place-items-center rounded-lg text-slate-400 opacity-50 transition-opacity hover:bg-slate-100 hover:opacity-100 focus-visible:opacity-100 ${
+            dragging ? "cursor-grabbing opacity-100" : "cursor-grab"
+          }`}
+          aria-label={`גרירה לשינוי סדר המשימה ${item.text || index + 1}`}
+          title="גרור לשינוי סדר"
+        >
+          <GripVertical size={16} aria-hidden="true" />
+        </button>
+        <span className="w-4 shrink-0 text-center text-[12px] font-extrabold text-slate-400">
+          {index + 1}
+        </span>
+        <button
+          type="button"
+          onClick={onToggle}
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-extrabold ${
+            item.completed ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_6px_14px_-6px_rgba(16,185,129,0.7)]" : "bg-slate-100 text-slate-400 hover:bg-slate-200/70"
+          }`}
+          aria-label={item.completed ? "בטל סימון" : "סמן כהושלם"}
+        >
+          V
+        </button>
+        {marks && (
+          <span className="shrink-0 text-[15px] font-black leading-none text-rose-500">
+            {marks}
+          </span>
+        )}
+        <input
+          value={item.text}
+          onChange={(e) => onText(e.target.value)}
+          placeholder={planningTomorrow ? "משימה למחר…" : "משימה להיום…"}
+          className={`h-11 min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-slate-800 outline-none ${
+            item.completed ? "line-through" : ""
+          }`}
+        />
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="grid h-10 w-8 shrink-0 place-items-center text-rose-400"
+          aria-label={`מחיקת המשימה ${item.text || index + 1}`}
+          title="מחיקה"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+      {item.text.trim() && (
+        <button
+          type="button"
+          onClick={onMove}
+          className="mb-1 h-7 w-full rounded-lg text-[11px] font-extrabold text-slate-400 hover:bg-slate-50"
+        >
+          {planningTomorrow ? "העבר להיום" : "העבר למחר"}
+        </button>
+      )}
+    </Reorder.Item>
   );
 }

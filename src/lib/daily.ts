@@ -274,6 +274,36 @@ export function ensureTodaySlots(
   return ensureDateSlots(tasks, today, deleted);
 }
 
+/**
+ * Drag-and-drop reorder of `date`'s rows: `orderedIds` (a subset, e.g. the non-starred rows)
+ * takes over the order_index positions those same rows already held, so rows outside the
+ * subset keep their slots and no row is ever added or removed. Rows whose position changed
+ * get `now` as updated_at so the new order beats older cloud copies in mergeDailyTasks.
+ * Returns `tasks` unchanged when the ids don't match the date's rows exactly.
+ */
+export function reorderDateTasks(
+  tasks: DailyTask[],
+  date: string,
+  orderedIds: readonly string[],
+  now = Date.now(),
+): DailyTask[] {
+  const onDate = dateTasks(tasks, date);
+  const byId = new Map(onDate.map((item) => [item.id, item]));
+  const unique = new Set(orderedIds);
+  if (unique.size !== orderedIds.length || orderedIds.some((id) => !byId.has(id))) return tasks;
+  const slots = onDate.filter((item) => unique.has(item.id)).map((item) => item.order_index);
+  const nextIndex = new Map(orderedIds.map((id, n) => [id, slots[n]]));
+  let changed = false;
+  const next = tasks.map((item) => {
+    if (item.date !== date) return item;
+    const order_index = nextIndex.get(item.id);
+    if (order_index === undefined || order_index === item.order_index) return item;
+    changed = true;
+    return { ...item, order_index, updated_at: now };
+  });
+  return changed ? next : tasks;
+}
+
 export function bangs(count: number): string {
   if (count <= 0) return "";
   return "!".repeat(Math.min(count, 8));

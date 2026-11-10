@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { applyDailyRollover, dateTasks, emptyDailyTask, ensureDateSlots } from "../lib/daily";
+import { applyDailyRollover, dateTasks, emptyDailyTask, ensureDateSlots, reorderDateTasks } from "../lib/daily";
 import { todayKey } from "../lib/defaults";
 import { upsertSetting } from "../lib/supabase";
 import type { DailyTask } from "../types";
@@ -16,6 +16,8 @@ export interface DailyTasksState {
   moveDailyTask: (id: string, date: string) => void;
   /** Makes exactly `ids` the starred focus tasks of `date` (0, 1 or many). */
   setDailyStars: (date: string, ids: string[]) => void;
+  /** Drag-and-drop: `ids` (that date's rows, or a subset) take their slots in this order. */
+  reorderDailyTasks: (date: string, ids: string[]) => void;
 }
 
 export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksState {
@@ -153,6 +155,17 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
     [mutate, persistDaily],
   );
 
+  const reorderDailyTasks = useCallback(
+    (date: string, ids: string[]) => {
+      mutate((prev) => {
+        const reordered = reorderDateTasks(prev.dailyTasks, date, ids);
+        if (reordered === prev.dailyTasks) return prev;
+        return { ...prev, dailyTasks: persistDaily(reordered, prev.deletedIds) };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
   return useMemo(
     () => ({
       addDailyTask,
@@ -163,12 +176,14 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       setDailyViewDate,
       moveDailyTask,
       setDailyStars,
+      reorderDailyTasks,
     }),
     [
       addDailyTask,
       dailyViewDate,
       deleteDailyTask,
       moveDailyTask,
+      reorderDailyTasks,
       setDailyStars,
       setDailyViewDate,
       toggleDailyTask,

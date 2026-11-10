@@ -5,6 +5,7 @@ import {
   applyDailyRollover,
   dateTasks,
   mergeDailyTasks,
+  reorderDateTasks,
 } from "../src/lib/daily.ts";
 import type { DailyTask } from "../src/types.ts";
 
@@ -88,6 +89,34 @@ function task(id: string, text: string, date: string, extra: Partial<DailyTask> 
   ];
   const merged = dateTasks(applyDailyRollover(rows, today), today).filter((item) => item.text.trim());
   check("duplicate carried-over text is deduplicated", merged.length === 1 && merged[0].id === "day-1");
+}
+
+// 7. Drag-and-drop reorder keeps exactly the same 6 rows, leaves a starred row in its slot,
+//    and its newer stamps beat a stale cloud copy of the old order.
+{
+  const base = applyDailyRollover([], today).map((item, n) => ({
+    ...item,
+    text: `t${n}`,
+    updated_at: 5,
+    ...(n === 0 ? { is_black_star: true } : {}),
+  }));
+  const regularIds = dateTasks(base, today).filter((item) => !item.is_black_star).map((item) => item.id);
+  const wanted = [...regularIds].reverse();
+  const reordered = reorderDateTasks(base, today, wanted, 99);
+  const rows = dateTasks(reordered, today);
+  const sameSet = rows.length === DAILY_SLOT_COUNT && new Set(rows.map((item) => item.id)).size === DAILY_SLOT_COUNT;
+  const starKept = rows[0].is_black_star === true && rows[0].id === base[0].id;
+  const order = rows.filter((item) => !item.is_black_star).map((item) => item.id);
+  check("reorder keeps 6 unique rows and the starred slot", sameSet && starKept, JSON.stringify(rows.map((r) => r.id)));
+  check("reorder applies the dragged order", JSON.stringify(order) === JSON.stringify(wanted));
+  const merged = dateTasks(mergeDailyTasks(reordered, base), today).filter((item) => !item.is_black_star);
+  check(
+    "new order survives a merge with the stale cloud order",
+    merged.length === DAILY_SLOT_COUNT - 1 && JSON.stringify(merged.map((item) => item.id)) === JSON.stringify(wanted),
+    JSON.stringify(merged.map((item) => item.id)),
+  );
+  const bogus = reorderDateTasks(base, today, [regularIds[0], regularIds[0]], 99);
+  check("reorder with duplicate / foreign ids is a no-op", bogus === base);
 }
 
 if (failures) {
