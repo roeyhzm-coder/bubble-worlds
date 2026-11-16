@@ -104,7 +104,7 @@ export function PageSwitcher({
       <div
         dir="ltr"
         ref={barRef}
-        className="card flex h-11 min-w-0 flex-1 gap-0.5 overflow-x-auto overflow-y-hidden p-1 no-scrollbar"
+        className="card flex w-full min-w-0 flex-1 flex-wrap items-center justify-center gap-1 rounded-2xl p-1"
       >
         {tabs.map((tab) =>
           editing ? (
@@ -112,7 +112,7 @@ export function PageSwitcher({
               key={tab.id}
               value={tab.value}
               onChange={(e) => setPageLabels({ [tab.key]: e.target.value })}
-              className="h-9 w-[4.75rem] flex-auto shrink-0 rounded-xl bg-slate-50 px-1 text-center text-xs font-extrabold text-slate-800 outline-none"
+              className="h-8 w-[5.5rem] shrink-0 rounded-xl bg-slate-50 px-1 text-center text-xs font-extrabold text-slate-800 outline-none sm:h-9"
               aria-label={`שם לשונית ${tab.emoji}`}
             />
           ) : (
@@ -121,7 +121,7 @@ export function PageSwitcher({
               type="button"
               data-tab={tab.id}
               onClick={() => onPage(tab.id)}
-              className={`inline-flex h-9 flex-auto shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-extrabold sm:text-sm ${
+              className={`inline-flex h-8 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2.5 text-xs font-extrabold sm:h-9 sm:flex-auto sm:text-sm ${
                 page === tab.id
                   ? "bg-gradient-to-b from-slate-700 to-slate-900 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_6px_14px_-6px_rgba(15,23,42,0.55)]"
                   : "text-slate-500 hover:bg-slate-50"
@@ -136,7 +136,7 @@ export function PageSwitcher({
       <button
         type="button"
         onClick={() => setEditing((v) => !v)}
-        className="card grid h-11 w-11 shrink-0 place-items-center text-slate-500"
+        className="card grid h-8 w-8 shrink-0 place-items-center self-start text-slate-500 sm:h-11 sm:w-11 sm:self-auto"
         aria-label={editing ? "סיום עריכת שמות" : "עריכת שמות הלשוניות"}
         title={editing ? "סיום עריכת שמות" : "עריכת שמות הלשוניות"}
       >

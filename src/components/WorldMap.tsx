@@ -93,7 +93,7 @@ export function WorldMap({ onDragChange }: WorldMapProps) {
         <div
           ref={canvasRef}
           data-canvas
-          className="relative min-h-0 flex-1 overflow-hidden"
+          className="relative mb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] min-h-0 flex-1 overflow-hidden sm:mb-0"
         >
           {canvasItems.length === 0 && (
             <div className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-slate-400">

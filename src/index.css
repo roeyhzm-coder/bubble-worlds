@@ -71,7 +71,7 @@ textarea {
 @layer utilities {
   /* Scroll area clearance: content can always scroll past the floating + button and the device nav bar. */
   .scroll-clear {
-    padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(9rem + env(safe-area-inset-bottom, 0px));
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
@@ -79,10 +79,14 @@ textarea {
 
   /* Floating action button sits clear of the Android/iOS bottom system bar. */
   .fab-bottom {
-    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
   }
 
   @media (min-width: 640px) {
+    .scroll-clear {
+      padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+    }
+
     .fab-bottom {
       bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
     }
