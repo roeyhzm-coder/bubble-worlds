@@ -211,7 +211,7 @@ export function FocusHub() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pb-24 no-scrollbar">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 scroll-clear no-scrollbar">
         {groups.map(({ type, items }) => {
           const groupOpen = expanded.has(type.id);
           const tracking = supportsRoutine(type);

@@ -45,7 +45,7 @@ export function Successes() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 pb-24 no-scrollbar">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 scroll-clear no-scrollbar">
         <form
           className="rounded-2xl bg-white/90 p-2.5 shadow-soft ring-1 ring-amber-100"
           onSubmit={(e) => {

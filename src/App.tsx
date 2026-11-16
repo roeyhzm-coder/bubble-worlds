@@ -103,7 +103,7 @@ export default function App() {
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden overflow-x-hidden bg-gradient-to-br from-slate-50 via-slate-100/70 to-indigo-50/40">
-      <header className="shrink-0 px-3 pb-1 pt-[max(0.5rem,env(safe-area-inset-top))]">
+      <header className="shrink-0 px-3 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between px-1">
           <div className="text-lg font-extrabold tracking-tight text-slate-800">
             עולמות
@@ -176,7 +176,7 @@ export default function App() {
             else if (page === 4) addTriangleType();
             else requestCreate();
           }}
-          className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] end-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_12px_26px_-10px_rgba(79,70,229,0.55)] active:scale-95"
+          className="fab-bottom fixed end-5 z-40 sm:end-8 grid h-14 w-14 place-items-center rounded-full bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_12px_26px_-10px_rgba(79,70,229,0.55)] active:scale-95"
           aria-label={page === 1 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
           title={page === 1 ? "הוספת משימה" : page === 4 ? "הוספת סוג משולש" : "הוספה"}
         >

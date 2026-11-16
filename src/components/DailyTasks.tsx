@@ -109,7 +109,7 @@ export function DailyTasks() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 pb-24 no-scrollbar">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 scroll-clear no-scrollbar">
         <AnimatePresence initial={false}>
           {starred.length > 0 && (
             <motion.section

@@ -130,7 +130,7 @@ export function InnerList({ items }: { items: Bubble[] }) {
   const hasDraft = draft.trim().length > 0;
 
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-x-hidden px-3 pb-24">
+    <div className="flex h-full min-w-0 flex-col overflow-x-hidden px-3">
       <form
         className="card mb-2 flex h-12 items-center gap-2 pe-1.5 ps-3 focus-within:ring-2 focus-within:ring-indigo-200"
         onSubmit={(e) => {
@@ -240,7 +240,7 @@ export function InnerList({ items }: { items: Bubble[] }) {
         )}
       </AnimatePresence>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden no-scrollbar">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden scroll-clear no-scrollbar">
         {items.length === 0 && (
           <div className="grid h-32 place-items-center text-sm text-slate-400">
             הרשימה ריקה. כתבו שם ולחצו "הוסף +".

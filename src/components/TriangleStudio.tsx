@@ -40,7 +40,7 @@ export function TriangleStudio() {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 pb-24 no-scrollbar">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-3 scroll-clear no-scrollbar">
         {types.map((type, index) => {
           const open = openId === type.id;
           const count = snapshot.bubbles.filter((item) => item.triangle_id === type.id).length;

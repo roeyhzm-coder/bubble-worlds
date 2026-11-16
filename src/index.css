@@ -67,3 +67,24 @@ textarea {
     @apply inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-extrabold;
   }
 }
+
+@layer utilities {
+  /* Scroll area clearance: content can always scroll past the floating + button and the device nav bar. */
+  .scroll-clear {
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* Floating action button sits clear of the Android/iOS bottom system bar. */
+  .fab-bottom {
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 640px) {
+    .fab-bottom {
+      bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { Check, Pencil } from "lucide-react";
-import { useRef, useState, type ReactNode, type TouchEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from "react";
 import { useApp } from "../state/AppProvider";
 
 interface SwipePagerProps {
@@ -84,6 +84,13 @@ export function PageSwitcher({
   const { snapshot, setPageLabels } = useApp();
   const [editing, setEditing] = useState(false);
   const labels = snapshot.pageLabels;
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // Keep the active tab visible when the bar overflows on narrow screens.
+  useEffect(() => {
+    const active = barRef.current?.querySelector<HTMLElement>(`[data-tab="${page}"]`);
+    active?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [page]);
   const tabs = [
     { id: 0, emoji: "🌐", key: "map" as const, value: labels.map },
     { id: 1, emoji: "✅", key: "daily" as const, value: labels.daily },
@@ -96,7 +103,8 @@ export function PageSwitcher({
     <div className="mx-auto mt-1.5 flex w-full max-w-lg items-center gap-1.5">
       <div
         dir="ltr"
-        className="card flex h-11 min-w-0 flex-1 p-1"
+        ref={barRef}
+        className="card flex h-11 min-w-0 flex-1 gap-0.5 overflow-x-auto overflow-y-hidden p-1 no-scrollbar"
       >
         {tabs.map((tab) =>
           editing ? (
@@ -104,21 +112,23 @@ export function PageSwitcher({
               key={tab.id}
               value={tab.value}
               onChange={(e) => setPageLabels({ [tab.key]: e.target.value })}
-              className="h-9 min-w-0 flex-1 rounded-xl bg-slate-50 px-0.5 text-center text-[9px] font-extrabold text-slate-800 outline-none"
+              className="h-9 w-[4.75rem] flex-auto shrink-0 rounded-xl bg-slate-50 px-1 text-center text-xs font-extrabold text-slate-800 outline-none"
               aria-label={`שם לשונית ${tab.emoji}`}
             />
           ) : (
             <button
               key={tab.id}
               type="button"
+              data-tab={tab.id}
               onClick={() => onPage(tab.id)}
-              className={`h-9 min-w-0 flex-1 truncate rounded-xl px-0.5 text-[9px] font-extrabold ${
+              className={`inline-flex h-9 flex-auto shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-extrabold sm:text-sm ${
                 page === tab.id
                   ? "bg-gradient-to-b from-slate-700 to-slate-900 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_6px_14px_-6px_rgba(15,23,42,0.55)]"
                   : "text-slate-500 hover:bg-slate-50"
               }`}
             >
-              {tab.emoji} {tab.value}
+              <span aria-hidden="true">{tab.emoji}</span>
+              <span>{tab.value}</span>
             </button>
           ),
         )}
