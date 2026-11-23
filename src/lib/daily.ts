@@ -26,6 +26,7 @@ export function asDailyTasks(value: unknown): DailyTask[] {
       order_index: typeof row.order_index === "number" ? row.order_index : index,
       updated_at: typeof row.updated_at === "number" && Number.isFinite(row.updated_at) ? row.updated_at : 0,
       ...(row.is_black_star === true ? { is_black_star: true } : {}),
+      ...(typeof row.notes === "string" ? { notes: row.notes } : {}),
     }));
 }
 
@@ -88,6 +89,7 @@ export function mergeDailyTasks(
       ...prev,
       ...item,
       text: item.text || prev.text,
+      notes: item.notes || prev.notes,
       completed: item.completed || prev.completed,
       rollover_count: Math.max(item.rollover_count, prev.rollover_count),
     });
@@ -95,8 +97,13 @@ export function mergeDailyTasks(
   return applyDailyRollover([...map.values()], todayKey(), { deleted });
 }
 
-function isBlank(task: Pick<DailyTask, "text">): boolean {
-  return !task.text || task.text.trim() === "";
+/** True when the row has a title or a note; such rows are never purged, trimmed or overwritten. */
+export function hasDailyContent(task: Pick<DailyTask, "text" | "notes">): boolean {
+  return Boolean(task.text?.trim() || task.notes?.trim());
+}
+
+function isBlank(task: Pick<DailyTask, "text" | "notes">): boolean {
+  return !hasDailyContent(task);
 }
 
 /**
@@ -140,8 +147,9 @@ function textKey(task: Pick<DailyTask, "text">): string {
 function dedupeCarriedText(rows: DailyTask[]): DailyTask[] {
   const groups = new Map<string, DailyTask[]>();
   for (const item of rows) {
-    if (item.completed || isBlank(item)) continue;
     const key = textKey(item);
+    // Rows with only a note (no title) have nothing to compare, so they are never deduped.
+    if (item.completed || !key) continue;
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
   const drop = new Set<string>();
@@ -300,6 +308,29 @@ export function reorderDateTasks(
     if (order_index === undefined || order_index === item.order_index) return item;
     changed = true;
     return { ...item, order_index, updated_at: now };
+  });
+  return changed ? next : tasks;
+}
+
+/**
+ * Saves the note modal: `text` and/or `notes` change and the row is stamped `now`, so the edit
+ * wins mergeDailyTasks on every device. Order, date, star and rollover are left untouched.
+ * Returns `tasks` unchanged when nothing differs (or the id is unknown).
+ */
+export function updateDailyTaskDetails(
+  tasks: DailyTask[],
+  id: string,
+  details: { text?: string; notes?: string },
+  now = Date.now(),
+): DailyTask[] {
+  let changed = false;
+  const next = tasks.map((item) => {
+    if (item.id !== id) return item;
+    const text = details.text ?? item.text;
+    const notes = details.notes ?? item.notes ?? "";
+    if (text === item.text && notes === (item.notes ?? "")) return item;
+    changed = true;
+    return { ...item, text, notes, updated_at: now };
   });
   return changed ? next : tasks;
 }

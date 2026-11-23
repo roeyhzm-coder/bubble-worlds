@@ -1,10 +1,11 @@
 import { AnimatePresence, Reorder, motion, useDragControls } from "framer-motion";
-import { GripVertical, Moon, Plus, Star, Sun, Trash2 } from "lucide-react";
+import { FileText, GripVertical, Moon, Plus, Star, Sun, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { archivedTasks, bangs, dateTasks, tomorrowKey } from "../lib/daily";
 import { todayKey } from "../lib/defaults";
 import { useApp } from "../state/AppProvider";
 import { DailyStarSelector } from "./DailyStarSelector";
+import { DailyTaskNoteModal } from "./DailyTaskNoteModal";
 import type { DailyTask } from "../types";
 
 export function DailyTasks() {
@@ -12,6 +13,7 @@ export function DailyTasks() {
     snapshot,
     addDailyTask,
     updateDailyTask,
+    updateDailyTaskDetails,
     deleteDailyTask,
     toggleDailyTask,
     dailyViewDate,
@@ -21,6 +23,7 @@ export function DailyTasks() {
   } = useApp();
   const [showArchive, setShowArchive] = useState(false);
   const [starPicker, setStarPicker] = useState(false);
+  const [noteId, setNoteId] = useState<string | null>(null);
   const today = todayKey();
   const tomorrow = tomorrowKey();
   const planningTomorrow = dailyViewDate === tomorrow;
@@ -57,6 +60,13 @@ export function DailyTasks() {
     dragIds && dragIds.length === regularIds.length && dragIds.every((id) => regularById.has(id))
       ? dragIds
       : regularIds;
+  const noteTask = noteId ? items.find((item) => item.id === noteId) ?? null : null;
+  // Badge number: focus cards count first, then the regular rows in their shown order.
+  const noteSlot = noteTask
+    ? noteTask.is_black_star
+      ? starred.findIndex((item) => item.id === noteTask.id) + 1
+      : orderIds.indexOf(noteTask.id) + 1
+    : 0;
 
   return (
     <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
@@ -177,6 +187,7 @@ export function DailyTasks() {
                           item.completed ? "line-through" : ""
                         }`}
                       />
+                      <NoteButton task={item} tone="dark" onOpen={() => setNoteId(item.id)} />
                       <button
                         type="button"
                         onClick={() => updateDailyTask(item.id, { is_black_star: false })}
@@ -218,6 +229,7 @@ export function DailyTasks() {
                 onToggle={() => toggleDailyTask(id)}
                 onText={(text) => updateDailyTask(id, { text })}
                 onDelete={() => deleteDailyTask(id)}
+                onNote={() => setNoteId(id)}
                 onMove={() => moveDailyTask(id, planningTomorrow ? today : tomorrow)}
               />
             );
@@ -258,6 +270,12 @@ export function DailyTasks() {
           </div>
         )}
       </div>
+      <DailyTaskNoteModal
+        task={noteTask}
+        slot={noteSlot}
+        onSave={updateDailyTaskDetails}
+        onClose={() => setNoteId(null)}
+      />
       <DailyStarSelector
         open={starPicker}
         date={viewDate}
@@ -277,7 +295,43 @@ interface DailyTaskRowProps {
   onToggle: () => void;
   onText: (text: string) => void;
   onDelete: () => void;
+  onNote: () => void;
   onMove: () => void;
+}
+
+/** Opens the note modal: faint when empty, amber pill with a dot once the task has a note. */
+function NoteButton({ task, tone, onOpen }: { task: DailyTask; tone: "light" | "dark"; onOpen: () => void }) {
+  const hasNote = Boolean(task.notes?.trim());
+  const idle =
+    tone === "dark"
+      ? "text-blue-200/80 opacity-40 hover:bg-white/10 hover:opacity-90"
+      : "text-slate-500 opacity-40 hover:bg-slate-100 hover:opacity-90";
+  const active =
+    tone === "dark"
+      ? "bg-amber-300/15 text-amber-200 ring-1 ring-amber-300/30"
+      : "bg-amber-50 text-amber-600 ring-1 ring-amber-200";
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      className={`relative grid h-9 w-8 shrink-0 place-items-center rounded-xl transition-opacity focus-visible:opacity-100 ${
+        hasNote ? active : idle
+      }`}
+      aria-label={hasNote ? `פתק המשימה ${task.text || ""} (יש פתק)` : `הוספת פתק למשימה ${task.text || ""}`}
+      title={hasNote ? "פתיחת הפתק" : "הוספת פתק"}
+    >
+      <FileText size={15} aria-hidden="true" />
+      {hasNote && (
+        <span
+          aria-hidden="true"
+          className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${tone === "dark" ? "bg-amber-300" : "bg-amber-500"}`}
+        />
+      )}
+    </button>
+  );
 }
 
 /** One sortable daily row. Only the grip starts a drag, so the input stays freely typable. */
@@ -290,6 +344,7 @@ function DailyTaskRow({
   onToggle,
   onText,
   onDelete,
+  onNote,
   onMove,
 }: DailyTaskRowProps) {
   const controls = useDragControls();
@@ -356,6 +411,7 @@ function DailyTaskRow({
             item.completed ? "line-through" : ""
           }`}
         />
+        <NoteButton task={item} tone="light" onOpen={onNote} />
         <button
           type="button"
           onClick={(e) => {

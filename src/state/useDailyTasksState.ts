@@ -1,5 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
-import { applyDailyRollover, dateTasks, emptyDailyTask, ensureDateSlots, reorderDateTasks } from "../lib/daily";
+import {
+  applyDailyRollover,
+  dateTasks,
+  emptyDailyTask,
+  ensureDateSlots,
+  hasDailyContent,
+  reorderDateTasks,
+  updateDailyTaskDetails as applyTaskDetails,
+} from "../lib/daily";
 import { todayKey } from "../lib/defaults";
 import { upsertSetting } from "../lib/supabase";
 import type { DailyTask } from "../types";
@@ -9,6 +17,8 @@ import type { UndoStack } from "./useUndoStack";
 export interface DailyTasksState {
   addDailyTask: () => string;
   updateDailyTask: (id: string, patch: Partial<DailyTask>) => void;
+  /** Note modal save: title and/or notes, stamped now; a no-op when nothing changed. */
+  updateDailyTaskDetails: (id: string, details: { text?: string; notes?: string }) => void;
   deleteDailyTask: (id: string) => void;
   toggleDailyTask: (id: string) => void;
   dailyViewDate: string;
@@ -73,6 +83,17 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
     [mutate, persistDaily],
   );
 
+  const updateDailyTaskDetails = useCallback(
+    (id: string, details: { text?: string; notes?: string }) => {
+      mutate((prev) => {
+        const dailyTasks = applyTaskDetails(prev.dailyTasks, id, details);
+        if (dailyTasks === prev.dailyTasks) return prev;
+        return { ...prev, dailyTasks: persistDaily(dailyTasks, prev.deletedIds) };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
   const deleteDailyTask = useCallback(
     (id: string) => {
       const current = snapshotRef.current;
@@ -88,7 +109,7 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       const next = { ...current, dailyTasks, deletedIds };
       commit(next, 900);
       // Blank rows vanish without ceremony; only real tasks get an undo toast.
-      if (task.text.trim()) recordUndo(`המשימה "${task.text.trim()}" נמחקה`, current, next);
+      if (hasDailyContent(task)) recordUndo(`המשימה "${task.text.trim() || "עם פתק"}" נמחקה`, current, next);
     },
     [commit, persistDaily, recordUndo, snapshotRef],
   );
@@ -116,7 +137,8 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
         const today = todayKey();
         // The moved task takes the first blank slot on the target date instead of adding a row.
         const target = dateTasks(prev.dailyTasks, date);
-        const slot = target.find((item) => !item.text.trim());
+        // A row holding only a note is not a free slot.
+        const slot = target.find((item) => !hasDailyContent(item));
         const updated = prev.dailyTasks
           .filter((item) => item.id !== slot?.id)
           .map((item) =>
@@ -170,6 +192,7 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
     () => ({
       addDailyTask,
       updateDailyTask,
+      updateDailyTaskDetails,
       deleteDailyTask,
       toggleDailyTask,
       dailyViewDate,
@@ -188,6 +211,7 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       setDailyViewDate,
       toggleDailyTask,
       updateDailyTask,
+      updateDailyTaskDetails,
     ],
   );
 }

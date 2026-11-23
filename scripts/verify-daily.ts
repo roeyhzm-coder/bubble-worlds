@@ -3,9 +3,11 @@
 import {
   DAILY_SLOT_COUNT,
   applyDailyRollover,
+  asDailyTasks,
   dateTasks,
   mergeDailyTasks,
   reorderDateTasks,
+  updateDailyTaskDetails,
 } from "../src/lib/daily.ts";
 import type { DailyTask } from "../src/types.ts";
 
@@ -117,6 +119,58 @@ function task(id: string, text: string, date: string, extra: Partial<DailyTask> 
   );
   const bogus = reorderDateTasks(base, today, [regularIds[0], regularIds[0]], 99);
   check("reorder with duplicate / foreign ids is a no-op", bogus === base);
+}
+
+// 8. Task notes: parsed from the cloud JSON, kept by reorder / rollover / merge, newest edit wins,
+//    and a row holding only a note is never purged or trimmed as a blank slot.
+{
+  const parsed = asDailyTasks([{ id: "day-n", text: "דוח", date: today, notes: "שלב 1 · שלב 2" }]);
+  check("notes are parsed from the daily_tasks JSON", parsed[0]?.notes === "שלב 1 · שלב 2");
+
+  const base = applyDailyRollover([], today).map((item, n) => ({
+    ...item,
+    text: `t${n}`,
+    updated_at: 5,
+    ...(n === 1 ? { notes: "פרטים ארוכים" } : {}),
+  }));
+  const noteId = base[1].id;
+  const reordered = reorderDateTasks(base, today, [...base.map((item) => item.id)].reverse(), 99);
+  const rows = dateTasks(reordered, today);
+  check(
+    "reorder keeps notes and 6 slots",
+    rows.length === DAILY_SLOT_COUNT && rows.find((item) => item.id === noteId)?.notes === "פרטים ארוכים",
+  );
+
+  const edited = updateDailyTaskDetails(base, noteId, { notes: "גרסה חדשה" }, 200);
+  const editedRow = edited.find((item) => item.id === noteId);
+  check("details update stamps updated_at", editedRow?.notes === "גרסה חדשה" && editedRow.updated_at === 200);
+  check("details update with no change is a no-op", updateDailyTaskDetails(base, noteId, { notes: "פרטים ארוכים" }, 300) === base);
+  const mergedA = mergeDailyTasks(edited, base).find((item) => item.id === noteId);
+  const mergedB = mergeDailyTasks(base, edited).find((item) => item.id === noteId);
+  check("newer note wins the merge (both orders)", mergedA?.notes === "גרסה חדשה" && mergedB?.notes === "גרסה חדשה");
+  const cleared = updateDailyTaskDetails(edited, noteId, { notes: "" }, 300);
+  const clearMerged = mergeDailyTasks(edited, cleared).find((item) => item.id === noteId);
+  check("newer note clear beats older note", clearMerged?.notes === "", JSON.stringify(clearMerged));
+  const tieMerged = mergeDailyTasks(base, base.map((item) => ({ ...item, notes: undefined }))).find((item) => item.id === noteId);
+  check("equal-stamp field merge keeps the note", tieMerged?.notes === "פרטים ארוכים");
+
+  const rolled = dateTasks(
+    applyDailyRollover([task("day-r", "להמשיך", yesterday, { notes: "הערה", updated_at: 1 })], today),
+    today,
+  );
+  const carried = rolled.find((item) => item.id === "day-r");
+  check("rollover keeps notes", carried?.notes === "הערה" && carried.rollover_count === 1 && rolled.length === DAILY_SLOT_COUNT);
+
+  const noteOnly = [
+    task("day-o", "", yesterday, { notes: "רק פתק", updated_at: 1 }),
+    ...Array.from({ length: 6 }, (_, n) => task(`day-b${n}`, "", today, { order_index: n })),
+  ];
+  const kept = dateTasks(applyDailyRollover(noteOnly, today), today);
+  check(
+    "note-only row is not purged or trimmed as blank",
+    kept.some((item) => item.id === "day-o" && item.notes === "רק פתק") && kept.length === DAILY_SLOT_COUNT,
+    JSON.stringify(kept.map((item) => item.id)),
+  );
 }
 
 if (failures) {

@@ -163,6 +163,8 @@ export interface DailyTask {
   order_index: number;
   /** Pinned to the daily focus zone; any number of a day's tasks may be starred. */
   is_black_star?: boolean;
+  /** Long-form details ("פתק משימה"), edited in DailyTaskNoteModal; "" once cleared. */
+  notes?: string;
   /** ms of the last create / edit / toggle / move; the newer copy wins a cloud merge. */
   updated_at?: number;
 }
