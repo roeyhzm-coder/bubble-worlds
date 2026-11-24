@@ -26,6 +26,7 @@ export function asDailyTasks(value: unknown): DailyTask[] {
       order_index: typeof row.order_index === "number" ? row.order_index : index,
       updated_at: typeof row.updated_at === "number" && Number.isFinite(row.updated_at) ? row.updated_at : 0,
       ...(row.is_black_star === true ? { is_black_star: true } : {}),
+      ...(row.is_important === true && row.is_black_star !== true ? { is_important: true } : {}),
       ...(typeof row.notes === "string" ? { notes: row.notes } : {}),
     }));
 }
@@ -313,14 +314,28 @@ export function reorderDateTasks(
 }
 
 /**
- * Saves the note modal: `text` and/or `notes` change and the row is stamped `now`, so the edit
- * wins mergeDailyTasks on every device. Order, date, star and rollover are left untouched.
- * Returns `tasks` unchanged when nothing differs (or the id is unknown).
+ * Priority tiers: the Black Star supersedes "important", and a row without a title can't be
+ * important. Returns `task` itself when it already obeys both rules.
+ */
+export function applyPriorityRules(task: DailyTask): DailyTask {
+  if (!task.is_important || canBeImportant(task)) return task;
+  return { ...task, is_important: false };
+}
+
+/** True when the task may be flagged important right now (has a title, not a Black Star). */
+export function canBeImportant(task: Pick<DailyTask, "text" | "is_black_star">): boolean {
+  return Boolean(task.text.trim()) && !task.is_black_star;
+}
+
+/**
+ * Saves the note modal: `text`, `notes` and/or `is_important` change and the row is stamped
+ * `now`, so the edit wins mergeDailyTasks on every device. Order, date, star and rollover are
+ * left untouched. Returns `tasks` unchanged when nothing differs (or the id is unknown).
  */
 export function updateDailyTaskDetails(
   tasks: DailyTask[],
   id: string,
-  details: { text?: string; notes?: string },
+  details: { text?: string; notes?: string; is_important?: boolean },
   now = Date.now(),
 ): DailyTask[] {
   let changed = false;
@@ -328,11 +343,82 @@ export function updateDailyTaskDetails(
     if (item.id !== id) return item;
     const text = details.text ?? item.text;
     const notes = details.notes ?? item.notes ?? "";
-    if (text === item.text && notes === (item.notes ?? "")) return item;
+    const candidate = applyPriorityRules({
+      ...item,
+      text,
+      notes,
+      is_important: details.is_important ?? Boolean(item.is_important),
+    });
+    const important = Boolean(candidate.is_important);
+    if (text === item.text && notes === (item.notes ?? "") && important === Boolean(item.is_important)) return item;
     changed = true;
-    return { ...item, text, notes, updated_at: now };
+    return { ...candidate, is_important: important, updated_at: now };
   });
   return changed ? next : tasks;
+}
+
+/**
+ * Generic row patch (inline typing, check, unstar…): stamped `now`, then the priority rules
+ * apply, so starring a task or clearing its last character also drops its "important" flag.
+ */
+export function patchDailyTask(
+  tasks: DailyTask[],
+  id: string,
+  patch: Partial<DailyTask>,
+  now = Date.now(),
+): DailyTask[] {
+  return tasks.map((item) => (item.id === id ? applyPriorityRules({ ...item, ...patch, updated_at: now }) : item));
+}
+
+/**
+ * Makes exactly `ids` the Black Star tasks of `date`. A newly starred task loses its
+ * "important" flag (the star supersedes it). Only rows that change are stamped `now`.
+ */
+export function setDateStars(
+  tasks: DailyTask[],
+  date: string,
+  ids: readonly string[],
+  now = Date.now(),
+): DailyTask[] {
+  const chosen = new Set(ids);
+  return tasks.map((item) => {
+    if (item.date !== date) return item;
+    const starred = chosen.has(item.id);
+    const clearImportant = starred && Boolean(item.is_important);
+    if (Boolean(item.is_black_star) === starred && !clearImportant) return item;
+    return { ...item, is_black_star: starred, ...(clearImportant ? { is_important: false } : {}), updated_at: now };
+  });
+}
+
+/**
+ * Makes exactly `ids` the important tasks of `date` (0, 1 or many). Ids that are Black Stars
+ * or have no title are ignored. Only rows whose flag actually changes are stamped `now`.
+ */
+export function setDateImportant(
+  tasks: DailyTask[],
+  date: string,
+  ids: readonly string[],
+  now = Date.now(),
+): DailyTask[] {
+  const chosen = new Set(ids);
+  let changed = false;
+  const next = tasks.map((item) => {
+    if (item.date !== date) return item;
+    const important = chosen.has(item.id) && canBeImportant(item);
+    if (Boolean(item.is_important) === important) return item;
+    changed = true;
+    return { ...item, is_important: important, updated_at: now };
+  });
+  return changed ? next : tasks;
+}
+
+/** Flips one task's "important" flag (a no-op for a Black Star or an untitled row being set). */
+export function toggleDailyImportant(tasks: DailyTask[], id: string, now = Date.now()): DailyTask[] {
+  const task = tasks.find((item) => item.id === id);
+  if (!task) return tasks;
+  const important = !task.is_important && canBeImportant(task);
+  if (Boolean(task.is_important) === important) return tasks;
+  return tasks.map((item) => (item.id === id ? { ...item, is_important: important, updated_at: now } : item));
 }
 
 export function bangs(count: number): string {

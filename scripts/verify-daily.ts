@@ -6,7 +6,11 @@ import {
   asDailyTasks,
   dateTasks,
   mergeDailyTasks,
+  patchDailyTask,
   reorderDateTasks,
+  setDateImportant,
+  setDateStars,
+  toggleDailyImportant,
   updateDailyTaskDetails,
 } from "../src/lib/daily.ts";
 import type { DailyTask } from "../src/types.ts";
@@ -170,6 +174,92 @@ function task(id: string, text: string, date: string, extra: Partial<DailyTask> 
     "note-only row is not purged or trimmed as blank",
     kept.some((item) => item.id === "day-o" && item.notes === "רק פתק") && kept.length === DAILY_SLOT_COUNT,
     JSON.stringify(kept.map((item) => item.id)),
+  );
+}
+
+// 9. Important flag (tier 2): parsed, kept by reorder / rollover / move / text + note edits,
+//    newest edit wins a merge, cleared by starring or emptying the row, never on a Black Star.
+{
+  const parsed = asDailyTasks([
+    { id: "day-i", text: "דחוף", date: today, is_important: true },
+    { id: "day-bs", text: "קדוש", date: today, is_important: true, is_black_star: true },
+  ]);
+  check(
+    "is_important is parsed, and dropped on a Black Star",
+    parsed[0]?.is_important === true && parsed[1]?.is_important === undefined && parsed[1]?.is_black_star === true,
+  );
+
+  const base = applyDailyRollover([], today).map((item, n) => ({ ...item, text: `t${n}`, updated_at: 5 }));
+  const ids = base.map((item) => item.id);
+  const flagged = setDateImportant(base, today, [ids[1], ids[3]], 50);
+  const stamps = flagged.map((item) => item.updated_at);
+  check(
+    "setDateImportant flags exactly the chosen rows and stamps only them",
+    flagged.filter((item) => item.is_important).map((item) => item.id).join() === [ids[1], ids[3]].join() &&
+      stamps.filter((stamp) => stamp === 50).length === 2,
+  );
+  check("setDateImportant with the same set is a no-op", setDateImportant(flagged, today, [ids[3], ids[1]], 60) === flagged);
+  const unflagged = setDateImportant(flagged, today, [ids[1]], 70);
+  check(
+    "unflagging stamps only the changed row",
+    unflagged.find((item) => item.id === ids[3])?.is_important === false &&
+      unflagged.find((item) => item.id === ids[3])?.updated_at === 70 &&
+      unflagged.find((item) => item.id === ids[1])?.updated_at === 50,
+  );
+
+  const reordered = dateTasks(reorderDateTasks(flagged, today, [...ids].reverse(), 99), today);
+  check(
+    "reorder keeps is_important and 6 slots",
+    reordered.length === DAILY_SLOT_COUNT &&
+      reordered.filter((item) => item.is_important).map((item) => item.id).sort().join() === [ids[1], ids[3]].sort().join(),
+  );
+
+  const merged = mergeDailyTasks(base, flagged);
+  const mergedRev = mergeDailyTasks(flagged, base);
+  const flagsOf = (rows: DailyTask[]) => rows.filter((item) => item.is_important).map((item) => item.id).sort().join();
+  check("flag survives a merge with an older remote copy (both orders)", flagsOf(merged) === flagsOf(flagged) && flagsOf(mergedRev) === flagsOf(flagged));
+  check("newer unflag beats an older flag", flagsOf(mergeDailyTasks(flagged, unflagged)) === ids[1]);
+
+  const rolled = dateTasks(
+    applyDailyRollover([task("day-ri", "להמשיך", yesterday, { is_important: true, updated_at: 1 })], today),
+    today,
+  );
+  const carried = rolled.find((item) => item.id === "day-ri");
+  check("rollover keeps is_important", carried?.is_important === true && carried.rollover_count === 1 && rolled.length === DAILY_SLOT_COUNT);
+
+  const moved = patchDailyTask(flagged, ids[1], { date: key(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)) }, 80);
+  check("moving a task to tomorrow keeps is_important", moved.find((item) => item.id === ids[1])?.is_important === true);
+
+  const retitled = patchDailyTask(flagged, ids[1], { text: "שם חדש" }, 81);
+  const noted = updateDailyTaskDetails(flagged, ids[1], { notes: "פרטים" }, 82);
+  check(
+    "editing text / notes keeps is_important",
+    retitled.find((item) => item.id === ids[1])?.is_important === true && noted.find((item) => item.id === ids[1])?.is_important === true,
+  );
+  const viaModal = updateDailyTaskDetails(base, ids[2], { is_important: true }, 83);
+  check("note modal toggle flags a task and stamps it", viaModal.find((item) => item.id === ids[2])?.is_important === true && viaModal.find((item) => item.id === ids[2])?.updated_at === 83);
+  check("note modal toggle is a no-op when unchanged", updateDailyTaskDetails(viaModal, ids[2], { is_important: true }, 84) === viaModal);
+
+  const emptied = patchDailyTask(flagged, ids[1], { text: "" }, 85).find((item) => item.id === ids[1]);
+  check("clearing a slot's text resets is_important", emptied?.is_important === false && emptied.updated_at === 85);
+
+  const starred = setDateStars(flagged, today, [ids[1]], 90);
+  const star = starred.find((item) => item.id === ids[1]);
+  check("promoting to Black Star clears is_important", star?.is_black_star === true && star.is_important === false && star.updated_at === 90);
+  const starredViaPatch = patchDailyTask(flagged, ids[3], { is_black_star: true }, 91).find((item) => item.id === ids[3]);
+  check("starring via a row patch clears is_important too", starredViaPatch?.is_important === false);
+  check("a Black Star can't be flagged important", setDateImportant(starred, today, [ids[1], ids[3]], 95).find((item) => item.id === ids[1])?.is_important === false);
+  check("toggle on a Black Star is a no-op", toggleDailyImportant(starred, ids[1], 96) === starred);
+  check("toggle flips a regular task", toggleDailyImportant(base, ids[0], 97).find((item) => item.id === ids[0])?.is_important === true);
+  check("an untitled slot can't be flagged", setDateImportant(applyDailyRollover([], today), today, ids.slice(0, 1), 98).every((item) => !item.is_important));
+
+  const deleted = new Set([ids[1]]);
+  const afterDelete = dateTasks(applyDailyRollover(flagged.filter((item) => item.id !== ids[1]), today, { deleted }), today);
+  const resurrected = mergeDailyTasks(afterDelete, flagged, deleted).some((item) => item.id === ids[1]);
+  check("trash-deleted important task never returns via a stale copy", !resurrected);
+  check(
+    "6-slot limit holds with important tasks",
+    dateTasks(mergeDailyTasks(flagged, applyDailyRollover([], today)), today).length === DAILY_SLOT_COUNT,
   );
 }
 

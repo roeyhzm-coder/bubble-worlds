@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { FileText, Star, Trash2, X } from "lucide-react";
+import { FileText, Flag, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDialogFocus, useEscape } from "../lib/useEscape";
 import type { DailyTask } from "../types";
@@ -10,7 +10,7 @@ interface DailyTaskNoteModalProps {
   task: DailyTask | null;
   /** 1-based slot number shown in the header badge. */
   slot: number;
-  onSave: (id: string, details: { text: string; notes: string }) => void;
+  onSave: (id: string, details: { text: string; notes: string; is_important: boolean }) => void;
   onClose: () => void;
 }
 
@@ -26,6 +26,7 @@ export function DailyTaskNoteModal({ task, slot, onSave, onClose }: DailyTaskNot
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const [notes, setNotes] = useState("");
+  const [important, setImportant] = useState(false);
   const [openedId, setOpenedId] = useState<string | null>(null);
   const viewport = useVisualViewport(open);
 
@@ -35,17 +36,18 @@ export function DailyTaskNoteModal({ task, slot, onSave, onClose }: DailyTaskNot
     if (task) {
       setText(task.text);
       setNotes(task.notes ?? "");
+      setImportant(Boolean(task.is_important));
     }
   }
 
-  const draft = useRef({ id: "", text: "", notes: "" });
-  draft.current = { id: task?.id ?? "", text, notes };
+  const draft = useRef({ id: "", text: "", notes: "", important: false });
+  draft.current = { id: task?.id ?? "", text, notes, important };
   const saveRef = useRef(onSave);
   saveRef.current = onSave;
 
   const flush = useCallback(() => {
-    const { id, text: title, notes: body } = draft.current;
-    if (id) saveRef.current(id, { text: title, notes: body });
+    const { id, text: title, notes: body, important: flagged } = draft.current;
+    if (id) saveRef.current(id, { text: title, notes: body, is_important: flagged });
   }, []);
 
   const close = useCallback(() => {
@@ -80,6 +82,9 @@ export function DailyTaskNoteModal({ task, slot, onSave, onClose }: DailyTaskNot
 
   const starred = Boolean(task?.is_black_star);
   const hasNotes = notes.trim().length > 0;
+  // A Black Star supersedes "important"; an untitled task can't be flagged (saved as off).
+  const canFlag = !starred && text.trim().length > 0;
+  const flagged = canFlag && important;
 
   return (
     <Portal>
@@ -198,8 +203,32 @@ export function DailyTaskNoteModal({ task, slot, onSave, onClose }: DailyTaskNot
                 </label>
               </div>
 
-              {hasNotes && (
-                <div className="flex shrink-0 justify-start border-t border-slate-100 px-2 pb-2 pt-1">
+              {(hasNotes || !starred) && (
+                <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 px-2 pb-2 pt-1">
+                  {!starred ? (
+                    <button
+                      type="button"
+                      onClick={() => setImportant((value) => !value)}
+                      disabled={!canFlag}
+                      aria-pressed={flagged}
+                      title={canFlag ? undefined : "יש להזין כותרת כדי לסמן כחשובה"}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-extrabold transition-colors disabled:opacity-40 ${
+                        flagged
+                          ? "border-orange-500 bg-orange-500 text-white shadow-[0_6px_14px_-8px_rgba(234,88,12,0.9)]"
+                          : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                      }`}
+                    >
+                      <Flag
+                        size={13}
+                        aria-hidden="true"
+                        className={flagged ? "fill-white text-white" : "fill-orange-500 text-orange-500"}
+                      />
+                      {flagged ? "משימה חשובה" : "סמן כחשובה"}
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  {hasNotes && (
                   <button
                     type="button"
                     onClick={() => setNotes("")}
@@ -208,6 +237,7 @@ export function DailyTaskNoteModal({ task, slot, onSave, onClose }: DailyTaskNot
                     <Trash2 size={13} aria-hidden="true" />
                     נקה פתק
                   </button>
+                  )}
                 </div>
               )}
             </motion.div>

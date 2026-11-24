@@ -1,9 +1,10 @@
 import { AnimatePresence, Reorder, motion, useDragControls } from "framer-motion";
-import { FileText, GripVertical, Moon, Plus, Star, Sun, Trash2 } from "lucide-react";
+import { FileText, Flag, GripVertical, Moon, Plus, Star, Sun, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { archivedTasks, bangs, dateTasks, tomorrowKey } from "../lib/daily";
 import { todayKey } from "../lib/defaults";
 import { useApp } from "../state/AppProvider";
+import { DailyImportantSelector } from "./DailyImportantSelector";
 import { DailyStarSelector } from "./DailyStarSelector";
 import { DailyTaskNoteModal } from "./DailyTaskNoteModal";
 import type { DailyTask } from "../types";
@@ -23,6 +24,7 @@ export function DailyTasks() {
   } = useApp();
   const [showArchive, setShowArchive] = useState(false);
   const [starPicker, setStarPicker] = useState(false);
+  const [importantPicker, setImportantPicker] = useState(false);
   const [noteId, setNoteId] = useState<string | null>(null);
   const today = todayKey();
   const tomorrow = tomorrowKey();
@@ -40,6 +42,7 @@ export function DailyTasks() {
   const total = items.filter((item) => item.text.trim()).length;
   const starred = items.filter((item) => item.is_black_star);
   const regular = useMemo(() => items.filter((item) => !item.is_black_star), [items]);
+  const importantCount = regular.filter((item) => item.is_important).length;
   const regularIds = useMemo(() => regular.map((item) => item.id), [regular]);
   const regularById = useMemo(() => new Map(regular.map((item) => [item.id, item])), [regular]);
   // While a row is held, the order lives only here; the store is written once, on drop.
@@ -71,23 +74,37 @@ export function DailyTasks() {
   return (
     <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
       <div className="px-3 pb-2">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
           <div className="min-w-0 truncate text-[15px] font-extrabold text-slate-800">
             {snapshot.pageLabels.daily}
           </div>
           {total > 0 && (
-            <button
-              type="button"
-              onClick={() => setStarPicker(true)}
-              aria-haspopup="dialog"
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-indigo-900/40 bg-gradient-to-r from-blue-950 to-indigo-950 px-3 text-[11px] font-extrabold text-blue-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_18px_-10px_rgba(30,27,75,0.8)]"
-            >
-              <Star size={13} fill="black" color="rgba(255,255,255,0.55)" strokeWidth={1.5} aria-hidden="true" />
-              ניהול משימות מיקוד
-              {starred.length > 0 && (
-                <span className="rounded-full bg-white/15 px-1.5 text-[10px] leading-4">{starred.length}</span>
-              )}
-            </button>
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setImportantPicker(true)}
+                aria-haspopup="dialog"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-orange-300/80 bg-gradient-to-b from-orange-50 to-amber-50 px-2.5 text-[11px] font-extrabold text-orange-700 shadow-sm hover:from-orange-100 hover:to-amber-100"
+              >
+                <Flag size={13} className="fill-orange-500 text-orange-500" aria-hidden="true" />
+                משימות חשובות
+                {importantCount > 0 && (
+                  <span className="rounded-full bg-orange-500 px-1.5 text-[10px] leading-4 text-white">{importantCount}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStarPicker(true)}
+                aria-haspopup="dialog"
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-indigo-900/40 bg-gradient-to-r from-blue-950 to-indigo-950 px-3 text-[11px] font-extrabold text-blue-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_18px_-10px_rgba(30,27,75,0.8)]"
+              >
+                <Star size={13} fill="black" color="rgba(255,255,255,0.55)" strokeWidth={1.5} aria-hidden="true" />
+                ניהול משימות מיקוד
+                {starred.length > 0 && (
+                  <span className="rounded-full bg-white/15 px-1.5 text-[10px] leading-4">{starred.length}</span>
+                )}
+              </button>
+            </div>
           )}
         </div>
         <div className="mb-2 text-[11px] font-bold text-slate-400">
@@ -276,6 +293,12 @@ export function DailyTasks() {
         onSave={updateDailyTaskDetails}
         onClose={() => setNoteId(null)}
       />
+      <DailyImportantSelector
+        open={importantPicker}
+        date={viewDate}
+        tasks={items}
+        onClose={() => setImportantPicker(false)}
+      />
       <DailyStarSelector
         open={starPicker}
         date={viewDate}
@@ -350,6 +373,7 @@ function DailyTaskRow({
   const controls = useDragControls();
   const [dragging, setDragging] = useState(false);
   const marks = planningTomorrow ? "" : bangs(item.rollover_count);
+  const important = Boolean(item.is_important);
   return (
     <Reorder.Item
       as="div"
@@ -366,9 +390,9 @@ function DailyTaskRow({
       }}
       whileDrag={{ scale: 1.02, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
       transition={{ type: "spring", stiffness: 520, damping: 40 }}
-      className={`card relative px-2 py-1 ${item.completed && !dragging ? "opacity-55" : ""} ${
-        dragging ? "z-10" : ""
-      }`}
+      className={`card relative px-2 py-1 ${
+        important ? "border-orange-300/80 border-r-4 border-r-orange-500 bg-orange-50/75 shadow-sm" : ""
+      } ${item.completed && !dragging ? "opacity-55" : ""} ${dragging ? "z-10" : ""}`}
     >
       <div className="flex min-h-12 items-center gap-1.5">
         <button
@@ -385,9 +409,19 @@ function DailyTaskRow({
         >
           <GripVertical size={16} aria-hidden="true" />
         </button>
-        <span className="w-4 shrink-0 text-center text-[12px] font-extrabold text-slate-400">
-          {index + 1}
-        </span>
+        {important ? (
+          <span
+            className="flex w-4 shrink-0 flex-col items-center gap-0.5 text-[11px] font-extrabold leading-none text-orange-600"
+            title="משימה חשובה"
+          >
+            <Flag className="h-3.5 w-3.5 shrink-0 fill-orange-500 text-orange-500" aria-label="משימה חשובה" />
+            {index + 1}
+          </span>
+        ) : (
+          <span className="w-4 shrink-0 text-center text-[12px] font-extrabold text-slate-400">
+            {index + 1}
+          </span>
+        )}
         <button
           type="button"
           onClick={onToggle}

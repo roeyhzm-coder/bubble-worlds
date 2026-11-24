@@ -5,7 +5,11 @@ import {
   emptyDailyTask,
   ensureDateSlots,
   hasDailyContent,
+  patchDailyTask,
   reorderDateTasks,
+  setDateImportant,
+  setDateStars,
+  toggleDailyImportant as applyToggleImportant,
   updateDailyTaskDetails as applyTaskDetails,
 } from "../lib/daily";
 import { todayKey } from "../lib/defaults";
@@ -17,8 +21,8 @@ import type { UndoStack } from "./useUndoStack";
 export interface DailyTasksState {
   addDailyTask: () => string;
   updateDailyTask: (id: string, patch: Partial<DailyTask>) => void;
-  /** Note modal save: title and/or notes, stamped now; a no-op when nothing changed. */
-  updateDailyTaskDetails: (id: string, details: { text?: string; notes?: string }) => void;
+  /** Note modal save: title, notes and/or important flag, stamped now; a no-op when nothing changed. */
+  updateDailyTaskDetails: (id: string, details: { text?: string; notes?: string; is_important?: boolean }) => void;
   deleteDailyTask: (id: string) => void;
   toggleDailyTask: (id: string) => void;
   dailyViewDate: string;
@@ -26,6 +30,10 @@ export interface DailyTasksState {
   moveDailyTask: (id: string, date: string) => void;
   /** Makes exactly `ids` the starred focus tasks of `date` (0, 1 or many). */
   setDailyStars: (date: string, ids: string[]) => void;
+  /** Makes exactly `ids` the important (flagged) tasks of `date`; Black Stars are ignored. */
+  setDailyImportant: (date: string, ids: string[]) => void;
+  /** Flips one task's important flag. */
+  toggleDailyTaskImportant: (id: string) => void;
   /** Drag-and-drop: `ids` (that date's rows, or a subset) take their slots in this order. */
   reorderDailyTasks: (date: string, ids: string[]) => void;
 }
@@ -75,7 +83,7 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       mutate((prev) => ({
         ...prev,
         dailyTasks: persistDaily(
-          prev.dailyTasks.map((item) => (item.id === id ? { ...item, ...patch, updated_at: Date.now() } : item)),
+          patchDailyTask(prev.dailyTasks, id, patch),
           prev.deletedIds,
         ),
       }));
@@ -84,7 +92,7 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
   );
 
   const updateDailyTaskDetails = useCallback(
-    (id: string, details: { text?: string; notes?: string }) => {
+    (id: string, details: { text?: string; notes?: string; is_important?: boolean }) => {
       mutate((prev) => {
         const dailyTasks = applyTaskDetails(prev.dailyTasks, id, details);
         if (dailyTasks === prev.dailyTasks) return prev;
@@ -160,19 +168,32 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
 
   const setDailyStars = useCallback(
     (date: string, ids: string[]) => {
-      const chosen = new Set(ids);
-      const now = Date.now();
       mutate((prev) => ({
         ...prev,
-        dailyTasks: persistDaily(
-          prev.dailyTasks.map((item) => {
-            if (item.date !== date) return item;
-            const starred = chosen.has(item.id);
-            return Boolean(item.is_black_star) === starred ? item : { ...item, is_black_star: starred, updated_at: now };
-          }),
-          prev.deletedIds,
-        ),
+        dailyTasks: persistDaily(setDateStars(prev.dailyTasks, date, ids), prev.deletedIds),
       }));
+    },
+    [mutate, persistDaily],
+  );
+
+  const setDailyImportant = useCallback(
+    (date: string, ids: string[]) => {
+      mutate((prev) => {
+        const dailyTasks = setDateImportant(prev.dailyTasks, date, ids);
+        if (dailyTasks === prev.dailyTasks) return prev;
+        return { ...prev, dailyTasks: persistDaily(dailyTasks, prev.deletedIds) };
+      });
+    },
+    [mutate, persistDaily],
+  );
+
+  const toggleDailyTaskImportant = useCallback(
+    (id: string) => {
+      mutate((prev) => {
+        const dailyTasks = applyToggleImportant(prev.dailyTasks, id);
+        if (dailyTasks === prev.dailyTasks) return prev;
+        return { ...prev, dailyTasks: persistDaily(dailyTasks, prev.deletedIds) };
+      });
     },
     [mutate, persistDaily],
   );
@@ -199,6 +220,8 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       setDailyViewDate,
       moveDailyTask,
       setDailyStars,
+      setDailyImportant,
+      toggleDailyTaskImportant,
       reorderDailyTasks,
     }),
     [
@@ -207,8 +230,10 @@ export function useDailyTasksState(store: Store, undo: UndoStack): DailyTasksSta
       deleteDailyTask,
       moveDailyTask,
       reorderDailyTasks,
+      setDailyImportant,
       setDailyStars,
       setDailyViewDate,
+      toggleDailyTaskImportant,
       toggleDailyTask,
       updateDailyTask,
       updateDailyTaskDetails,
