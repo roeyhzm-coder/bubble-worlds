@@ -1,7 +1,11 @@
 import { motion } from "framer-motion";
-import { ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, Trash2 } from "lucide-react";
+import { ArrowDownUp, Bot, ChevronDown, ChevronsDownUp, ChevronsUpDown, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { accentFill } from "../lib/accent";
+import { todayKey } from "../lib/defaults";
+import { collectHabits, supportsWeeklyTarget } from "../lib/habitReport";
+import { groupByTopic } from "../lib/habitTopics";
+import { weeklyScorecard } from "../lib/weeklyTracking";
 import { sortByOrder, stepOrder } from "../lib/order";
 import { ROUTINE_SLOTS, currentRoutine, routineOf, routineSlot, supportsRoutine } from "../lib/routine";
 import { useEscape } from "../lib/useEscape";
@@ -10,6 +14,9 @@ import { isItemCompleted, sessionProgress, trackingProgress } from "../lib/track
 import { useApp } from "../state/AppProvider";
 import type { Bubble, RoutineTime, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { HabitAIExportModal } from "./HabitAIExportModal";
+import { WeeklyDots } from "./HabitProfile";
+import { HabitTopicsModal } from "./HabitTopicsModal";
 import { ReorderButtons } from "./ReorderButtons";
 import {
   CompletionBar,
@@ -29,6 +36,11 @@ const LEGACY_COLLAPSE_KEY = "bubble-worlds-hub-collapsed";
 
 type RoutineFilter = "all" | "now" | Exclude<RoutineTime, "general">;
 
+/** "לפי סוג" groups by triangle type; "לפי תחומים" groups habits by their topic. */
+type HubView = "type" | "topic";
+
+const TOPIC_KEY_PREFIX = "topic:";
+
 /** Re-evaluates the current part of the day once a minute so "עכשיו" stays accurate. */
 function useCurrentRoutine() {
   const [slot, setSlot] = useState(() => currentRoutine());
@@ -40,7 +52,11 @@ function useCurrentRoutine() {
 }
 
 export function FocusHub() {
-  const { snapshot, setPage, setDrill, reorderItems } = useApp();
+  const { snapshot, setPage, setDrill, reorderItems, habitTopics } = useApp();
+  // Session-only, like the routine filter: the hub always opens on the type view.
+  const [view, setView] = useState<HubView>("type");
+  const [topicsOpen, setTopicsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   // Every group and time-of-day sub-group starts collapsed; only explicitly opened keys live here.
@@ -80,8 +96,25 @@ export function FocusHub() {
       .filter((group) => group.items.length > 0);
   }, [snapshot.bubbles, snapshot.triangleTypes]);
 
-  const allCollapsed = groups.every(({ type }) => !expanded.has(type.id));
+  const topicGroups = useMemo(() => {
+    if (view !== "topic") return [];
+    const rows = collectHabits(snapshot, todayKey());
+    return groupByTopic(
+      rows.map((row) => ({ ...row, habit_topic: row.item.habit_topic })),
+      habitTopics,
+    ).map((group) => ({ ...group, key: `${TOPIC_KEY_PREFIX}${group.label}` }));
+  }, [habitTopics, snapshot, view]);
+
+  const sectionKeys = view === "topic" ? topicGroups.map((group) => group.key) : groups.map(({ type }) => type.id);
+  const allCollapsed = sectionKeys.every((key) => !expanded.has(key));
   const activeSlot = routineFilter === "all" ? null : routineFilter === "now" ? nowSlot : routineFilter;
+
+  const goToSource = (item: Bubble) => {
+    setDrill(
+      item.parent_bubble_id ? { kind: "bubble", id: item.parent_bubble_id } : { kind: "category", id: item.category_id },
+    );
+    setPage(0);
+  };
 
   const renderCards = (type: TriangleType, items: Bubble[]) => {
     if (reordering) {
@@ -123,14 +156,7 @@ export function FocusHub() {
             open={openId === item.id}
             onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
             onDelete={() => setPendingDelete(item.id)}
-            onSource={() => {
-              setDrill(
-                item.parent_bubble_id
-                  ? { kind: "bubble", id: item.parent_bubble_id }
-                  : { kind: "category", id: item.category_id },
-              );
-              setPage(0);
-            }}
+            onSource={() => goToSource(item)}
           />
         ))}
       </div>
@@ -153,7 +179,9 @@ export function FocusHub() {
           <div className="text-[15px] font-extrabold text-slate-800">
             {snapshot.pageLabels.hub}
           </div>
-          <div className="text-[11px] text-slate-400">כל הפריטים לפי סוג משולש</div>
+          <div className="text-[11px] text-slate-400">
+            {view === "topic" ? "ההרגלים לפי תחומים" : "כל הפריטים לפי סוג משולש"}
+          </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           {openId && !reordering && (
@@ -165,7 +193,7 @@ export function FocusHub() {
               סגור פריט
             </button>
           )}
-          {groups.length > 0 && (
+          {groups.length > 0 && view === "type" && (
             <button
               type="button"
               onClick={() => {
@@ -183,12 +211,16 @@ export function FocusHub() {
               {reordering ? "סיום" : "סידור"}
             </button>
           )}
-          {groups.length > 0 && (
+          {sectionKeys.length > 0 && (
             <button
               type="button"
               onClick={() => {
                 if (!allCollapsed) {
                   setExpanded(new Set());
+                  return;
+                }
+                if (view === "topic") {
+                  setExpanded(new Set(sectionKeys));
                   return;
                 }
                 // "Open all" also opens the time-of-day sub-groups, so items are visible at once.
@@ -211,8 +243,104 @@ export function FocusHub() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
+        <div role="radiogroup" aria-label="תצוגה" className="inline-flex rounded-full bg-slate-100 p-0.5">
+          {(
+            [
+              { id: "type", label: "לפי סוג" },
+              { id: "topic", label: "לפי תחומים" },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={view === option.id}
+              onClick={() => {
+                setView(option.id);
+                setReordering(false);
+                setOpenId(null);
+              }}
+              className={`h-8 rounded-full px-3 text-[11px] font-extrabold ${
+                view === option.id ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setTopicsOpen(true)}
+          className="inline-flex h-8 items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2.5 text-[11px] font-extrabold text-slate-600 hover:bg-white"
+        >
+          <Settings2 size={13} />
+          תחומים
+        </button>
+        <button
+          type="button"
+          onClick={() => setExportOpen(true)}
+          className="inline-flex h-8 items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 text-[11px] font-extrabold text-violet-700 hover:bg-violet-100"
+        >
+          <Bot size={13} />
+          ייצוא ל-AI
+        </button>
+      </div>
+
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 scroll-clear no-scrollbar">
-        {groups.map(({ type, items }) => {
+        {view === "topic" &&
+          topicGroups.map((group) => {
+            const groupOpen = expanded.has(group.key);
+            return (
+              <section key={group.key} className="card p-2.5">
+                <button
+                  type="button"
+                  onClick={() => toggleSection(group.key)}
+                  aria-expanded={groupOpen}
+                  className="flex h-9 w-full items-center gap-2 rounded-xl px-1 text-start hover:bg-slate-50/80"
+                >
+                  <span className={`text-xs font-extrabold ${group.topic ? "text-indigo-700" : "text-slate-500"}`}>
+                    {group.label}
+                  </span>
+                  <span
+                    className="rounded-full bg-indigo-50 px-1.5 text-[10px] font-extrabold text-indigo-600"
+                    aria-label={`${group.items.length} הרגלים`}
+                  >
+                    {group.items.length}
+                  </span>
+                  <span className="flex-1" />
+                  <ChevronDown
+                    size={16}
+                    className={`shrink-0 text-slate-400 transition-transform ${groupOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                <Drawer open={groupOpen}>
+                  <div className="space-y-2 pt-1">
+                    {group.items.map(({ item, type }) => (
+                      <HubCard
+                        key={item.id}
+                        item={item}
+                        type={type}
+                        open={openId === item.id}
+                        onToggle={() => setOpenId((current) => (current === item.id ? null : item.id))}
+                        onDelete={() => setPendingDelete(item.id)}
+                        onSource={() => goToSource(item)}
+                      />
+                    ))}
+                  </div>
+                </Drawer>
+              </section>
+            );
+          })}
+
+        {view === "topic" && topicGroups.length === 0 && (
+          <div className="grid h-40 place-items-center px-4 text-center text-sm text-slate-400">
+            אין עדיין הרגלים. פריטי מעקב, מספר פעמים ביום ומונה מופיעים כאן לפי התחום שלהם.
+          </div>
+        )}
+
+        {view === "type" && groups.map(({ type, items }) => {
           const groupOpen = expanded.has(type.id);
           const tracking = supportsRoutine(type);
           const routineGroups = tracking
@@ -344,13 +472,15 @@ export function FocusHub() {
           );
         })}
 
-        {groups.length === 0 && (
+        {view === "type" && groups.length === 0 && (
           <div className="grid h-40 place-items-center text-sm text-slate-400">
             אין עדיין פריטים עם משולש. פריטים כלליים נשארים ברשימת המקור עד שמשייכים להם סוג.
           </div>
         )}
       </div>
       <HubDeleteDialog id={pendingDelete} onClose={() => setPendingDelete(null)} />
+      <HabitTopicsModal open={topicsOpen} onClose={() => setTopicsOpen(false)} />
+      <HabitAIExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
     </section>
   );
 }
@@ -390,6 +520,7 @@ function HubCard({
   const { setTriangleType } = useApp();
   const progress = trackingProgress(item);
   const completed = isItemCompleted(item, type.template);
+  const scorecard = supportsWeeklyTarget(type.template) ? weeklyScorecard(item, todayKey()) : null;
   return (
     <div
       className={`rounded-2xl border bg-white transition-shadow ${
@@ -410,6 +541,11 @@ function HubCard({
             <span className="truncate text-[14px] font-bold text-slate-800">{item.title || "ללא שם"}</span>
             <NoteIndicator notes={item.notes} />
           </div>
+          {scorecard && (
+            <div className="mt-0.5 flex">
+              <WeeklyDots card={scorecard} />
+            </div>
+          )}
           {type.template === "counter" && (
             <div className="truncate text-[11px] font-bold text-violet-700">
               {sessionProgress(item).done} / {sessionProgress(item).target} פעמים

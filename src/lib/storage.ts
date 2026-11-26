@@ -1,6 +1,7 @@
 import { BUBBLE_EXTRA_KEYS, type AppSnapshot, type Bubble } from "../types";
 import { mergeDailyTasks } from "./daily";
 import { EMPTY_SNAPSHOT, STORAGE_KEY, mergeSeed } from "./defaults";
+import { asHabitTopics, mergeHabitTopics } from "./habitTopics";
 import { mergeSuccesses } from "./successes";
 
 export function loadLocal(): AppSnapshot {
@@ -18,6 +19,7 @@ export function loadLocal(): AppSnapshot {
       dailyTasks: Array.isArray(parsed.dailyTasks) ? parsed.dailyTasks : [],
       successes: Array.isArray(parsed.successes) ? parsed.successes : [],
       deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
+      habitTopics: asHabitTopics(parsed.habitTopics),
     });
   } catch {
     // Keep the unreadable payload instead of letting the next save overwrite it.
@@ -155,5 +157,6 @@ export function mergeSnapshots(
     dailyTasks: mergeDailyTasks(dailyA ?? [], dailyB ?? [], deleted),
     successes: mergeSuccesses(winsA ?? [], winsB ?? []).filter((item) => !deleted.has(item.id)),
     deletedIds: [...deleted],
+    habitTopics: mergeHabitTopics(local.habitTopics, remote.habitTopics, prefer),
   });
 }

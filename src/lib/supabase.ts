@@ -1,21 +1,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   BW_TABLES,
-  BUBBLE_EXTRA_KEYS,
   type AppSnapshot,
   type Bubble,
   type BubbleExtrasEntry,
   type Category,
   type ColorRoles,
+  type HabitTopicsSetting,
   type PageLabels,
   type RoutineTime,
   type WorldKind,
 } from "../types";
 import { applyDailyRollover, asDailyTasks } from "./daily";
+import { asHabitTopics } from "./habitTopics";
+import { toBubbleRow, toCategoryRow } from "./rows";
 import { DEFAULT_COLOR_ROLES, DEFAULT_PAGE_LABELS, migrateHubLabel, todayKey } from "./defaults";
 import { asSuccesses } from "./successes";
 import { asDayMap, asSessionLog } from "./tracking";
 import { asActionSteps, asTriangleTypes } from "./triangles";
+import { normalizeDurationMin, normalizeWeeklyTarget } from "./weeklyTracking";
+
+export { toBubbleRow, toCategoryRow, type BubbleRow, type CategoryRow } from "./rows";
 
 function stripQuotes(value: string | undefined): string {
   return (value ?? "").trim().replace(/^["']|["']$/g, "").trim();
@@ -132,85 +137,6 @@ function normalizeCategory(row: Category): Category {
 }
 
 /**
- * The exact bw_bubbles columns (scripts/init-db.sql). Rows are built from this whitelist, so a
- * stray field on a local bubble (e.g. the retired `is_black_star`) can never reach PostgREST.
- * The schema is frozen: new item fields go in BUBBLE_EXTRA_KEYS (the bubble_extras setting).
- */
-const BUBBLE_COLUMNS = [
-  "id",
-  "parent_bubble_id",
-  "category_id",
-  "title",
-  "notes",
-  "color",
-  "status",
-  "position_x",
-  "position_y",
-  "size_multiplier",
-  "created_at",
-  "is_tracking",
-  "target_days",
-  "weekly_frequency",
-  "tracking_history",
-  "streak_mode",
-  "container_type",
-  "triangle_id",
-  "due_at",
-  "due_label",
-  "action_done",
-  "action_steps",
-] as const satisfies readonly (keyof Bubble)[];
-
-/** The exact bw_categories columns (scripts/init-db.sql). */
-const CATEGORY_COLUMNS = [
-  "id",
-  "name",
-  "color",
-  "position_x",
-  "position_y",
-  "order_index",
-  "created_at",
-  "container_type",
-] as const satisfies readonly (keyof Category)[];
-
-export type BubbleRow = Pick<Bubble, (typeof BUBBLE_COLUMNS)[number]>;
-export type CategoryRow = Pick<Category, (typeof CATEGORY_COLUMNS)[number]>;
-
-/**
- * Compile-time guard: every Bubble field must be a column, an extras key, or the local clock.
- * Adding a field to Bubble without registering it in BUBBLE_EXTRA_KEYS fails the build.
- */
-type UnroutedBubbleField = Exclude<
-  keyof Bubble,
-  (typeof BUBBLE_COLUMNS)[number] | (typeof BUBBLE_EXTRA_KEYS)[number] | "extras_updated_at"
->;
-const bubbleFieldsRouted: [UnroutedBubbleField] extends [never] ? true : UnroutedBubbleField = true;
-void bubbleFieldsRouted;
-
-/** Same guard for categories, which have no extras channel at all. */
-type UnroutedCategoryField = Exclude<keyof Category, (typeof CATEGORY_COLUMNS)[number]>;
-const categoryFieldsRouted: [UnroutedCategoryField] extends [never] ? true : UnroutedCategoryField = true;
-void categoryFieldsRouted;
-
-function pickColumns<T extends object, K extends keyof T>(source: T, columns: readonly K[]): Pick<T, K> {
-  const row = {} as Pick<T, K>;
-  for (const column of columns) {
-    if (source[column] !== undefined) row[column] = source[column];
-  }
-  return row;
-}
-
-/** Row payload for bw_bubbles: only registered columns; extras live in the bubble_extras setting. */
-export function toBubbleRow(bubble: Bubble): BubbleRow {
-  return pickColumns(bubble, BUBBLE_COLUMNS);
-}
-
-/** Row payload for bw_categories: only registered columns. */
-export function toCategoryRow(category: Category): CategoryRow {
-  return pickColumns(category, CATEGORY_COLUMNS);
-}
-
-/**
  * Collects every non-default extra field, keyed by bubble id. Items that were ever edited
  * keep an entry (even when back at defaults) so a reset carries its timestamp and wins merges.
  */
@@ -234,6 +160,12 @@ export function collectBubbleExtras(bubbles: Bubble[]): Record<string, BubbleExt
       extras.daily_targets_by_date = bubble.daily_targets_by_date;
     }
     if (typeof bubble.order_index === "number") extras.order_index = bubble.order_index;
+    const weeklyTarget = normalizeWeeklyTarget(bubble.weekly_target);
+    if (weeklyTarget !== null) extras.weekly_target = weeklyTarget;
+    if (bubble.habit_topic?.trim()) extras.habit_topic = bubble.habit_topic.trim();
+    if (bubble.habit_why?.trim()) extras.habit_why = bubble.habit_why;
+    const duration = normalizeDurationMin(bubble.habit_duration_min);
+    if (duration !== null) extras.habit_duration_min = duration;
     if (bubble.extras_updated_at) extras.updated_at = bubble.extras_updated_at;
     if (Object.keys(extras).length) out[bubble.id] = extras;
   }
@@ -255,6 +187,10 @@ const EXTRA_DEFAULTS: BubbleExtrasEntry = {
   daily_counts: {},
   daily_targets_by_date: {},
   order_index: undefined,
+  weekly_target: null,
+  habit_topic: "",
+  habit_why: "",
+  habit_duration_min: null,
 };
 
 function asRoutineTime(value: unknown): RoutineTime {
@@ -315,6 +251,10 @@ function asExtrasEntry(rec: Record<string, unknown>): BubbleExtrasEntry {
       daily_counts: asDayMap(rec.daily_counts),
       daily_targets_by_date: asDayMap(rec.daily_targets_by_date),
       order_index: typeof rec.order_index === "number" ? rec.order_index : undefined,
+      weekly_target: normalizeWeeklyTarget(rec.weekly_target),
+      habit_topic: typeof rec.habit_topic === "string" ? rec.habit_topic.trim().slice(0, 40) : "",
+      habit_why: typeof rec.habit_why === "string" ? rec.habit_why.slice(0, 2000) : "",
+      habit_duration_min: normalizeDurationMin(rec.habit_duration_min),
       updated_at: typeof rec.updated_at === "number" ? rec.updated_at : undefined,
   };
 }
@@ -407,7 +347,18 @@ export async function fetchRemoteSnapshot(): Promise<AppSnapshot | null> {
     }),
     successes: asSuccesses(map.successes),
     deletedIds,
+    habitTopics: readHabitTopics(map.habit_topics),
   };
+}
+
+/** Unreadable or missing cloud topics count as "never set", so the local list is kept. */
+function readHabitTopics(value: unknown): HabitTopicsSetting | undefined {
+  try {
+    return asHabitTopics(value);
+  } catch (error) {
+    console.warn("habit_topics payload is corrupted; keeping the local list", error);
+    return undefined;
+  }
 }
 
 export async function upsertCategory(category: Category): Promise<void> {
@@ -512,6 +463,39 @@ export function syncDeletedIds(ids: string[], restored: string[] = []): Promise<
   return run;
 }
 
+let topicsChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Fetch-before-write for habit_topics: the cloud copy is replaced only when this device's list
+ * is newer (by `updated_at`), so a stale device can never undo another's rename or delete.
+ * Nothing is written when the read fails or the list was never initialized here.
+ */
+export function syncHabitTopics(local: HabitTopicsSetting | undefined): Promise<string | null> {
+  const run = topicsChain.then(async (): Promise<string | null> => {
+    if (!local) return null;
+    const supabase = await getClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from(BW_TABLES.settings)
+      .select("value")
+      .eq("key", "habit_topics")
+      .maybeSingle();
+    if (error) {
+      console.warn("habit_topics read failed; skipping write", error.message);
+      return error.message;
+    }
+    const remote = readHabitTopics((data as { value?: unknown } | null)?.value);
+    if (remote && remote.updated_at >= local.updated_at) return null;
+    const { error: writeError } = await supabase
+      .from(BW_TABLES.settings)
+      .upsert({ key: "habit_topics", value: local });
+    if (writeError) console.warn("habit_topics write failed", writeError.message);
+    return writeError?.message ?? null;
+  });
+  topicsChain = run.catch(() => null);
+  return run;
+}
+
 export async function upsertColorRoles(colorRoles: ColorRoles): Promise<void> {
   return upsertSetting("color_roles", colorRoles);
 }
@@ -560,6 +544,8 @@ export async function pushSnapshotToCloud(snapshot: AppSnapshot): Promise<PushRe
   if (extrasError) result.errors.push(`נתוני פריטים: ${extrasError}`);
   const tombstoneError = await syncDeletedIds(snapshot.deletedIds);
   if (tombstoneError) result.errors.push(`מחיקות: ${tombstoneError}`);
+  const topicsError = await syncHabitTopics(snapshot.habitTopics);
+  if (topicsError) result.errors.push(`תחומים: ${topicsError}`);
   result.ok = result.errors.length === 0;
   return result;
 }
@@ -590,6 +576,7 @@ export async function forcePushSnapshotToCloud(snapshot: AppSnapshot): Promise<P
     { key: "successes", value: snapshot.successes },
     { key: "bubble_extras", value: collectBubbleExtras(snapshot.bubbles) },
     { key: "deleted_ids", value: asIdList(snapshot.deletedIds) },
+    ...(snapshot.habitTopics ? [{ key: "habit_topics", value: snapshot.habitTopics }] : []),
   ];
   // Categories first so bubbles never reference a missing parent row; the rest goes in parallel.
   if (snapshot.categories.length) {

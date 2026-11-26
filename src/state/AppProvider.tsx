@@ -5,6 +5,7 @@ import { useAppearanceState, type AppearanceState } from "./useAppearanceState";
 import { useBubblesState, type BubblesState } from "./useBubblesState";
 import { useCloudSync, type CloudSync } from "./useCloudSync";
 import { useDailyTasksState, type DailyTasksState } from "./useDailyTasksState";
+import { useHabitTopicsState, type HabitTopicsState } from "./useHabitTopicsState";
 import { useNavigationState, type NavigationState } from "./useNavigationState";
 import { useSuccessesState, type SuccessesState } from "./useSuccessesState";
 import { useUndoStack, type UndoStack } from "./useUndoStack";
@@ -18,6 +19,7 @@ export type AppContextValue = { snapshot: AppSnapshot } & Omit<NavigationState, 
   AppearanceState &
   DailyTasksState &
   SuccessesState &
+  HabitTopicsState &
   CloudSync &
   Omit<UndoStack, "recordUndo">;
 
@@ -32,6 +34,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const appearance = useAppearanceState(store, bubbles.updateBubble);
   const daily = useDailyTasksState(store, undo);
   const successes = useSuccessesState(store, bubbles.updateBubble, undo);
+  const topics = useHabitTopicsState(store);
 
   const value = useMemo<AppContextValue>(() => {
     const { setComposer: _setComposer, resolveParent: _resolveParent, ...navigation } = nav;
@@ -43,10 +46,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...appearance,
       ...daily,
       ...successes,
+      ...topics,
       ...cloud,
       ...undoApi,
     };
-  }, [appearance, bubbles, cloud, daily, nav, store.snapshot, successes, undo]);
+  }, [appearance, bubbles, cloud, daily, nav, store.snapshot, successes, topics, undo]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

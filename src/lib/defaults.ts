@@ -112,6 +112,7 @@ export function mergeSeed(snapshot: AppSnapshot): AppSnapshot {
     dailyTasks: applyDailyRollover(asDailyTasks(snapshot.dailyTasks), todayKey(), { deleted }),
     successes: asSuccesses(snapshot.successes).filter((item) => !deleted.has(item.id)),
     deletedIds: [...deleted],
+    ...(snapshot.habitTopics ? { habitTopics: snapshot.habitTopics } : {}),
   };
 }
 

@@ -34,6 +34,7 @@ function stampForForcePush(snapshot: AppSnapshot, now: number): AppSnapshot {
     ...snapshot,
     bubbles: snapshot.bubbles.map((bubble) => ({ ...bubble, extras_updated_at: now })),
     dailyTasks: snapshot.dailyTasks.map((task) => ({ ...task, updated_at: now })),
+    ...(snapshot.habitTopics ? { habitTopics: { ...snapshot.habitTopics, updated_at: now } } : {}),
   };
 }
 

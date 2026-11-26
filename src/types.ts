@@ -102,6 +102,14 @@ export interface Bubble {
   daily_targets_by_date?: Record<string, number>;
   /** Manual position among siblings (absent = after ordered items, in creation order). */
   order_index?: number;
+  /** Habit: expected completions per Sun–Sat week (1–7); null/absent = no weekly quota. */
+  weekly_target?: number | null;
+  /** Habit: assigned topic name from the `habit_topics` catalog ("" / absent = none). */
+  habit_topic?: string;
+  /** Habit: why the user does it / its core benefit ("למה / התועלת"). */
+  habit_why?: string;
+  /** Habit: estimated minutes per session (null/absent = not set). */
+  habit_duration_min?: number | null;
   /**
    * Local-only clock (ms) of the last change to any extras field. Synced inside the
    * bubble_extras entry so two devices merge per item instead of overwriting the blob.
@@ -125,6 +133,10 @@ export const BUBBLE_EXTRA_KEYS = [
   "daily_counts",
   "daily_targets_by_date",
   "order_index",
+  "weekly_target",
+  "habit_topic",
+  "habit_why",
+  "habit_duration_min",
 ] as const;
 
 /** Item fields synced via the `bubble_extras` setting instead of bw_bubbles columns. */
@@ -174,6 +186,12 @@ export interface DailyTask {
   updated_at?: number;
 }
 
+/** The `habit_topics` setting: the user's ordered topic catalog and when it last changed. */
+export interface HabitTopicsSetting {
+  items: string[];
+  updated_at: number;
+}
+
 export interface AppSnapshot {
   categories: Category[];
   bubbles: Bubble[];
@@ -184,6 +202,8 @@ export interface AppSnapshot {
   dailyTasks: DailyTask[];
   successes: Success[];
   deletedIds: string[];
+  /** Absent until the topic list is first edited (the starter suggestions are shown meanwhile). */
+  habitTopics?: HabitTopicsSetting;
 }
 
 export type DrillNode =

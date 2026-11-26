@@ -46,6 +46,8 @@ import { MULTI_DAILY_COLOR, WEEKDAYS, dueText, findTriangle, nextWeekdayIso } fr
 import { useApp } from "../state/AppProvider";
 import type { Bubble, ToolTemplate, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { HabitProfile } from "./HabitProfile";
+import { HABIT_TEMPLATES } from "../lib/habitReport";
 import { ProgressRing } from "./ProgressRing";
 
 export { accentFill, accentRing };
@@ -625,6 +627,7 @@ export function TypeTools({
       ) : (
         <TrackingTools item={live} color={type.color} routineEnabled={supportsRoutine(type)} />
       )}
+      {HABIT_TEMPLATES.includes(type.template) && <HabitProfile item={live} type={type} />}
       <NotesField item={live} />
     </>
   );

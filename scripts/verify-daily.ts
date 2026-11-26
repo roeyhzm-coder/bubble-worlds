@@ -14,6 +14,15 @@ import {
   updateDailyTaskDetails,
 } from "../src/lib/daily.ts";
 import type { DailyTask } from "../src/types.ts";
+import {
+  asHabitTopics,
+  deleteHabitTopic,
+  groupByTopic,
+  habitTopicList,
+  mergeHabitTopics,
+  renameHabitTopic,
+} from "../src/lib/habitTopics.ts";
+import { israeliWeekStart, normalizeWeeklyTarget, weekVerdict, weeklyScorecard } from "../src/lib/weeklyTracking.ts";
 
 function key(date: Date): string {
   const y = date.getFullYear();
@@ -261,6 +270,40 @@ function task(id: string, text: string, date: string, extra: Partial<DailyTask> 
     "6-slot limit holds with important tasks",
     dateTasks(mergeDailyTasks(flagged, applyDailyRollover([], today)), today).length === DAILY_SLOT_COUNT,
   );
+}
+
+// Weekly targets: Sun–Sat weeks, verdict colors, and tolerant parsing of stored values.
+{
+  check("week starts on Sunday", israeliWeekStart("2026-11-26") === "2026-11-22" && israeliWeekStart("2026-11-22") === "2026-11-22");
+  check("Saturday stays in its week", israeliWeekStart("2026-11-28") === "2026-11-22");
+  check("weekly target outside 1–7 is ignored", normalizeWeeklyTarget(0) === null && normalizeWeeklyTarget(9) === null && normalizeWeeklyTarget("3") === null);
+  check("verdicts", weekVerdict(4, 3, true) === "perfect" && weekVerdict(3, 3, true) === "met" && weekVerdict(2, 3, true) === "close" && weekVerdict(0, 3, true) === "below" && weekVerdict(0, 3, false) === "progress");
+  const card = weeklyScorecard(
+    { weekly_target: 3, tracking_history: ["2026-11-22", "2026-11-23", "2026-11-23", "2026-11-17", "2026-12-30"] },
+    "2026-11-26",
+  );
+  check("scorecard counts distinct past days per week", card?.weeks[0]?.count === 2 && card.weeks[1]?.count === 1 && card.weeks[0]?.closed === false);
+  check("no target means no scorecard", weeklyScorecard({ tracking_history: ["2026-11-22"] }, "2026-11-26") === null);
+}
+
+// Habit topics: newer list wins, renames follow linked habits, deletes never remove habits.
+{
+  const older = { items: ["A"], updated_at: 10 };
+  const newer = { items: ["B"], updated_at: 20 };
+  check("newer topic list wins either way", mergeHabitTopics(older, newer) === newer && mergeHabitTopics(newer, older) === newer);
+  check("unset side never beats a set list", mergeHabitTopics(undefined, older) === older && mergeHabitTopics(older, undefined) === older);
+  check("corrupt topics payload counts as unset", asHabitTopics("{bad") === undefined && asHabitTopics({ items: "x" }) === undefined);
+  check("defaults shown until first edit, empty list kept after", habitTopicList(undefined).length > 0 && habitTopicList({ items: [], updated_at: 1 }).length === 0);
+  const habits = [
+    { id: "h1", habit_topic: "כושר" },
+    { id: "h2", habit_topic: "" },
+  ];
+  const renamed = renameHabitTopic({ items: ["כושר"], updated_at: 1 }, habits, "כושר", "ספורט", 50);
+  check("rename re-stamps linked habits", renamed.ok && renamed.bubbles[0]?.habit_topic === "ספורט" && renamed.bubbles[0]?.extras_updated_at === 50 && renamed.changedIds.length === 1);
+  const removed = deleteHabitTopic({ items: ["כושר"], updated_at: 1 }, habits, "כושר", 60);
+  check("delete clears the topic but keeps every habit", removed.ok && removed.bubbles.length === 2 && removed.bubbles[0]?.habit_topic === "" && removed.setting.items.length === 0);
+  const grouped = groupByTopic(habits, ["כושר"]);
+  check("untopiced habits group last", grouped.length === 2 && grouped[1]?.topic === null);
 }
 
 if (failures) {
