@@ -22,7 +22,6 @@ import {
   mergeHabitTopics,
   renameHabitTopic,
 } from "../src/lib/habitTopics.ts";
-import { israeliWeekStart, normalizeWeeklyTarget, weekVerdict, weeklyScorecard } from "../src/lib/weeklyTracking.ts";
 
 function key(date: Date): string {
   const y = date.getFullYear();
@@ -270,20 +269,6 @@ function task(id: string, text: string, date: string, extra: Partial<DailyTask> 
     "6-slot limit holds with important tasks",
     dateTasks(mergeDailyTasks(flagged, applyDailyRollover([], today)), today).length === DAILY_SLOT_COUNT,
   );
-}
-
-// Weekly targets: Sun–Sat weeks, verdict colors, and tolerant parsing of stored values.
-{
-  check("week starts on Sunday", israeliWeekStart("2026-11-26") === "2026-11-22" && israeliWeekStart("2026-11-22") === "2026-11-22");
-  check("Saturday stays in its week", israeliWeekStart("2026-11-28") === "2026-11-22");
-  check("weekly target outside 1–7 is ignored", normalizeWeeklyTarget(0) === null && normalizeWeeklyTarget(9) === null && normalizeWeeklyTarget("3") === null);
-  check("verdicts", weekVerdict(4, 3, true) === "perfect" && weekVerdict(3, 3, true) === "met" && weekVerdict(2, 3, true) === "close" && weekVerdict(0, 3, true) === "below" && weekVerdict(0, 3, false) === "progress");
-  const card = weeklyScorecard(
-    { weekly_target: 3, tracking_history: ["2026-11-22", "2026-11-23", "2026-11-23", "2026-11-17", "2026-12-30"] },
-    "2026-11-26",
-  );
-  check("scorecard counts distinct past days per week", card?.weeks[0]?.count === 2 && card.weeks[1]?.count === 1 && card.weeks[0]?.closed === false);
-  check("no target means no scorecard", weeklyScorecard({ tracking_history: ["2026-11-22"] }, "2026-11-26") === null);
 }
 
 // Habit topics: newer list wins, renames follow linked habits, deletes never remove habits.

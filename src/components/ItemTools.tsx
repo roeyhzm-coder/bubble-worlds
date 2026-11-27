@@ -40,13 +40,13 @@ import {
   sessionOpportunities,
   sessionProgress,
   trackingProgress,
-  weeklyProgress,
 } from "../lib/tracking";
+import { habitFrequency, weeklyScorecard } from "../lib/weeklyTracking";
 import { MULTI_DAILY_COLOR, WEEKDAYS, dueText, findTriangle, nextWeekdayIso } from "../lib/triangles";
 import { useApp } from "../state/AppProvider";
 import type { Bubble, ToolTemplate, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { HabitProfile } from "./HabitProfile";
+import { HabitProfile, WeekPill } from "./HabitProfile";
 import { HABIT_TEMPLATES } from "../lib/habitReport";
 import { ProgressRing } from "./ProgressRing";
 
@@ -54,10 +54,10 @@ export { accentFill, accentRing };
 
 const HistoryCalendar = lazy(() => import("./HistoryCalendar"));
 
-const DAY_PRESETS = [21, 30, 60, 90, 120];
+/** Day-goal presets; any other goal (e.g. a stored 120) is kept and edited in the custom field. */
+const DAY_PRESETS = [21, 66, 254];
 const SESSION_PRESETS = [10, 25, 50, 100];
 const COUNTER_COLOR = "#7C3AED";
-const FREQUENCIES = [1, 2, 3, 4, 5, 6, 7];
 const SAVED_FLASH_MS = 1800;
 const UNDO_WINDOW_MS = 5000;
 
@@ -769,34 +769,11 @@ function TargetDaysPicker({ item, color }: { item: Bubble; color: string }) {
   );
 }
 
-/** Days per week the habit should happen (7 = every day). */
-function FrequencyPicker({ item, color }: { item: Bubble; color: string }) {
-  const { updateBubble } = useApp();
-  const frequency = Math.min(7, Math.max(1, item.weekly_frequency || 7));
-  return (
-    <div className="space-y-1.5 rounded-xl bg-slate-50 p-2">
-      <div className="text-[11px] font-bold text-slate-400">כמה ימים בשבוע?</div>
-      <div className="flex flex-wrap gap-1.5">
-        {FREQUENCIES.map((n) => (
-          <PresetButton
-            key={n}
-            active={frequency === n}
-            color={color}
-            onClick={() => updateBubble(item.id, { weekly_frequency: n })}
-          >
-            {n === 7 ? "כל יום" : n}
-          </PresetButton>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function CalendarFallback() {
   return <div className="h-64 animate-pulse rounded-xl bg-white ring-1 ring-slate-200" aria-label="טוען לוח…" />;
 }
 
-type TrackingPanel = "target" | "frequency" | "routine" | "history" | null;
+type TrackingPanel = "target" | "routine" | "history" | null;
 
 function TrackingTools({
   item,
@@ -818,12 +795,11 @@ function TrackingTools({
 
   const progress = trackingProgress(item);
   const doneToday = hasDate(item.tracking_history);
-  const frequency = Math.min(7, Math.max(1, item.weekly_frequency || 7));
-  const week = weeklyProgress(item);
+  const currentWeek = weeklyScorecard(item, todayKey())?.weeks[0];
   const streak = itemStreak(item);
   const baseStreak = useMemo(
-    () => computeStreak(item.tracking_history, item.streak_mode, item.weekly_frequency),
-    [item.tracking_history, item.streak_mode, item.weekly_frequency],
+    () => computeStreak(item.tracking_history, item.streak_mode, habitFrequency(item)),
+    [item],
   );
   const loggedDays = new Set(item.tracking_history ?? []).size;
   const routine = routineSlot(routineOf(item));
@@ -841,15 +817,7 @@ function TrackingTools({
           </div>
           <div>🔥 רצף {streak}</div>
         </div>
-        {frequency < 7 && (
-          <span
-            className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-extrabold ${
-              week.done >= week.target ? "bg-emerald-100 text-emerald-700" : "bg-sky-50 text-sky-700"
-            }`}
-          >
-            השבוע: {week.done}/{week.target}
-          </span>
-        )}
+        {currentWeek && <WeekPill week={currentWeek} label="השבוע" />}
       </div>
 
       <div className="grid grid-cols-[7fr_3fr] gap-1.5">
@@ -881,9 +849,6 @@ function TrackingTools({
         <Chip active={panel === "target"} color={color} onClick={() => togglePanel("target")}>
           🎯 יעד: {progress.target} ימים
         </Chip>
-        <Chip active={panel === "frequency"} color={color} onClick={() => togglePanel("frequency")}>
-          ⚡ תדירות: {frequency === 7 ? "כל יום" : `${frequency} בשבוע`}
-        </Chip>
         {routineEnabled && (
           <Chip active={panel === "routine"} color={color} onClick={() => togglePanel("routine")}>
             {routine.emoji} {routine.id === "general" ? "זמן: כללי" : routine.label}
@@ -903,10 +868,6 @@ function TrackingTools({
 
       <Drawer open={panel === "target"}>
         <TargetDaysPicker item={item} color={color} />
-      </Drawer>
-
-      <Drawer open={panel === "frequency"}>
-        <FrequencyPicker item={item} color={color} />
       </Drawer>
 
       <Drawer open={panel === "history"}>
@@ -1130,7 +1091,7 @@ function TodayCounter({
 const DAILY_PRESETS = [1, 2, 3, 4, 5, 6];
 const TODAY_TARGET_PRESETS = [2, 3, 4, 5, 6];
 
-type MultiDailyPanel = "base" | "target" | "frequency" | "routine" | "history" | null;
+type MultiDailyPanel = "base" | "target" | "routine" | "history" | null;
 
 /**
  * Cyan multi-per-day habit with proportional credit: each day earns done/target of a day
@@ -1153,11 +1114,10 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
   const complete = count >= target;
   const percent = Math.round(fraction * 100);
   const base = baseDailyTarget(item);
-  const frequency = Math.min(7, Math.max(1, item.weekly_frequency || 7));
-  const week = weeklyProgress(item);
+  const currentWeek = weeklyScorecard(item, todayKey())?.weeks[0];
   const streak = itemStreak(item);
   const baseStreak = useMemo(
-    () => computeStreak(activeDays(item), item.streak_mode, item.weekly_frequency),
+    () => computeStreak(activeDays(item), item.streak_mode, habitFrequency(item)),
     [item],
   );
   const routine = routineSlot(routineOf(item));
@@ -1182,15 +1142,7 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
           </div>
           <div>🔥 רצף {streak}</div>
         </div>
-        {frequency < 7 && (
-          <span
-            className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-extrabold ${
-              week.done >= week.target ? "bg-emerald-100 text-emerald-700" : "bg-cyan-50 text-cyan-700"
-            }`}
-          >
-            השבוע: {week.done}/{week.target}
-          </span>
-        )}
+        {currentWeek && <WeekPill week={currentWeek} label="השבוע" />}
       </div>
 
       <div className="space-y-2 rounded-2xl p-2 ring-1" style={{ background: tint(accent, 10), ["--tw-ring-color" as string]: tint(accent, 35) }}>
@@ -1281,9 +1233,6 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
         <Chip active={panel === "target"} color={accent} onClick={() => togglePanel("target")}>
           🎯 סה״כ ימים: {formatCredit(progress.credit)} / {progress.target}
         </Chip>
-        <Chip active={panel === "frequency"} color={accent} onClick={() => togglePanel("frequency")}>
-          ⚡ תדירות שבועית{frequency < 7 ? `: ${frequency}` : ""}
-        </Chip>
         <Chip active={panel === "routine"} color={accent} onClick={() => togglePanel("routine")}>
           {routine.emoji} {routine.id === "general" ? "זמן: כללי" : routine.label}
         </Chip>
@@ -1325,10 +1274,6 @@ function MultiDailyTools({ item, color }: { item: Bubble; color: string }) {
           </div>
           <TargetDaysPicker item={item} color={accent} />
         </div>
-      </Drawer>
-
-      <Drawer open={panel === "frequency"}>
-        <FrequencyPicker item={item} color={accent} />
       </Drawer>
 
       <Drawer open={panel === "routine"}>

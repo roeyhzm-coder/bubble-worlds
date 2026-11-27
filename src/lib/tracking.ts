@@ -1,5 +1,6 @@
 import type { Bubble, SessionOutcome, StreakMode, ToolTemplate } from "../types";
 import { todayKey } from "./defaults";
+import { habitFrequency } from "./weeklyTracking";
 
 function parseDay(key: string): Date {
   const [y, m, d] = key.split("-").map(Number);
@@ -42,19 +43,6 @@ export function trackingProgress(bubble: Bubble): {
   const done = Math.max(0, logged + (bubble.done_offset ?? 0));
   const target = Math.max(1, bubble.target_days || 1);
   return { done, target, ratio: Math.min(1, done / target) };
-}
-
-export function weeklyProgress(bubble: Bubble): { done: number; target: number; left: number } {
-  const today = todayKey();
-  const start = weekStartKey(today);
-  const done = uniqueSorted(bubble.tracking_history ?? []).filter(
-    (day) => day >= start && day <= today,
-  ).length;
-  return {
-    done,
-    target: clampFrequency(bubble.weekly_frequency),
-    left: 7 - parseDay(today).getDay(),
-  };
 }
 
 export const DEFAULT_SESSION_TARGET = 10;
@@ -352,7 +340,7 @@ export function computeStreak(
 
 /** Days with any session count toward the streak (multi-daily partial days included). */
 export function itemStreak(bubble: Bubble): number {
-  const base = computeStreak(activeDays(bubble), bubble.streak_mode, bubble.weekly_frequency);
+  const base = computeStreak(activeDays(bubble), bubble.streak_mode, habitFrequency(bubble));
   return Math.max(0, base + (bubble.streak_offset ?? 0));
 }
 

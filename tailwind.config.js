@@ -1,5 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // Class strategy: the app has no dark theme yet, so `dark:` variants stay inert instead of
+  // recoloring a few chips on dark-mode phones while the rest of the UI stays light.
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {

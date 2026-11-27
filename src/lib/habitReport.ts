@@ -3,13 +3,15 @@ import { groupByTopic, habitTopicList } from "./habitTopics";
 import { baseDailyTarget, formatCredit, itemStreak, multiDailyProgress, sessionProgress, trackingProgress } from "./tracking";
 import { findTriangle } from "./triangles";
 import {
-  VERDICT_REPORT_LABELS,
+  NEW_HABIT_LABEL,
+  TIER_REPORT_LABELS,
   WEEK_LABELS,
   addDays,
   adherenceRate,
+  effectiveWeeklyTarget,
+  habitFrequency,
   israeliWeekStart,
   normalizeDurationMin,
-  normalizeWeeklyTarget,
   weeklyCounts,
   weeklyScorecard,
   type WeeklyScorecard,
@@ -63,9 +65,7 @@ export function weeklyMinutes(row: HabitRow): number {
   if (minutes === null) return 0;
   const { template } = row.type;
   if (!supportsWeeklyTarget(template)) return 0;
-  const days =
-    normalizeWeeklyTarget(row.item.weekly_target) ??
-    Math.min(7, Math.max(1, Math.round(row.item.weekly_frequency || 7)));
+  const days = habitFrequency(row.item);
   const perDay = template === "multi_daily" ? baseDailyTarget(row.item) : 1;
   return minutes * days * perDay;
 }
@@ -74,7 +74,7 @@ export interface HabitSummary {
   habits: number;
   topics: number;
   weeklyMinutes: number;
-  /** % of closed weeks (last 3) that met their target, or null with no weekly targets. */
+  /** % of habits whose last week (when it applied) met their target, or null with no weekly targets. */
   adherence: number | null;
 }
 
@@ -106,16 +106,12 @@ function templateName(template: ToolTemplate): string {
 function frequencyLine(row: HabitRow): string {
   const { item, type } = row;
   const parts: string[] = [];
-  const target = normalizeWeeklyTarget(item.weekly_target);
+  const target = effectiveWeeklyTarget(item);
   if (type.template === "counter") {
     const s = sessionProgress(item);
     parts.push(`מונה: ${s.done}/${s.target} פעמים`);
   } else {
-    if (target !== null) parts.push(`יעד שבועי: ${target} פעמים בשבוע`);
-    else {
-      const freq = Math.min(7, Math.max(1, Math.round(item.weekly_frequency || 7)));
-      parts.push(freq === 7 ? "מעקב יומי (ללא יעד שבועי)" : `תדירות: ${freq} ימים בשבוע (ללא יעד שבועי)`);
-    }
+    parts.push(target !== null ? `יעד שבועי: ${target} פעמים בשבוע` : "מעקב יומי (ללא יעד שבועי)");
     if (type.template === "multi_daily") {
       const m = multiDailyProgress(item);
       parts.push(`${baseDailyTarget(item)} פעמים ביום`);
@@ -135,8 +131,8 @@ function performanceLine(row: HabitRow, today: string): string {
   if (row.scorecard) {
     return row.scorecard.weeks
       .map((week, i) => {
-        const verdict = week.closed || week.verdict !== "progress" ? ` (${VERDICT_REPORT_LABELS[week.verdict]})` : "";
-        return `${WEEK_LABELS[i]}: ${week.count}/${week.target}${verdict}`;
+        if (!week.applicable) return `${WEEK_LABELS[i]}: ${NEW_HABIT_LABEL} (טרם התחיל)`;
+        return `${WEEK_LABELS[i]}: ${week.count}/${week.target} (${TIER_REPORT_LABELS[week.tier]})`;
       })
       .join(" | ");
   }
@@ -162,7 +158,7 @@ export function buildHabitReport(snapshot: AppSnapshot, today: string, candidate
   lines.push(`- תחומים מכוסים: ${summary.topics}`);
   lines.push(`- זמן שבועי משוער: ${summary.weeklyMinutes} דקות (${formatCredit(Math.round((summary.weeklyMinutes / 60) * 10) / 10)} שעות)`);
   lines.push(
-    `- עמידה ביעדים שבועיים (3 שבועות סגורים): ${summary.adherence === null ? "אין יעדים שבועיים מוגדרים" : `${summary.adherence}%`}`,
+    `- עמידה ביעדים שבועיים (שבוע שעבר): ${summary.adherence === null ? "אין יעדים שבועיים מוגדרים" : `${summary.adherence}%`}`,
   );
   lines.push("- שבוע = ראשון עד שבת.");
   lines.push("");
@@ -177,7 +173,7 @@ export function buildHabitReport(snapshot: AppSnapshot, today: string, candidate
       lines.push(`- למה / תועלת: ${row.item.habit_why?.trim() ? oneLine(row.item.habit_why) : "לא הוגדר"}`);
       if (row.item.notes?.trim()) lines.push(`- הערות / הסכם אישי: ${oneLine(row.item.notes)}`);
       lines.push(`- תדירות, משך ויעד: ${frequencyLine(row)}`);
-      lines.push(`- ביצוע בפועל (4 שבועות אחרונים): ${performanceLine(row, today)}`);
+      lines.push(`- ביצוע בפועל (השבוע ושבוע שעבר): ${performanceLine(row, today)}`);
     }
   }
   if (rows.length === 0) lines.push("", "(אין עדיין הרגלים פעילים)");

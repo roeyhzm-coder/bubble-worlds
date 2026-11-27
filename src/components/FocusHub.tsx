@@ -15,7 +15,7 @@ import { useApp } from "../state/AppProvider";
 import type { Bubble, RoutineTime, TriangleType } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { HabitAIExportModal } from "./HabitAIExportModal";
-import { WeeklyDots } from "./HabitProfile";
+import { WeeklyPills } from "./HabitProfile";
 import { HabitTopicsModal } from "./HabitTopicsModal";
 import { ReorderButtons } from "./ReorderButtons";
 import {
@@ -541,9 +541,10 @@ function HubCard({
             <span className="truncate text-[14px] font-bold text-slate-800">{item.title || "ללא שם"}</span>
             <NoteIndicator notes={item.notes} />
           </div>
-          {scorecard && (
+          {/* Collapsed only: once open, the tools' summary row shows this week's pill. */}
+          {scorecard && !open && (
             <div className="mt-0.5 flex">
-              <WeeklyDots card={scorecard} />
+              <WeeklyPills card={scorecard} />
             </div>
           )}
           {type.template === "counter" && (
